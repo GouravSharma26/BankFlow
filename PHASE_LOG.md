@@ -154,9 +154,9 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-16
 - Branch: phase/1-foundation
-- Commit SHA: Pending commit
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/1-foundation>
-- Push status: Ready to push to origin/phase/1-foundation
+- Commit SHA: a1b1660
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/a1b1660>
+- Push status: Pushed to origin/phase/1-foundation
 - Objective: Fix raw staging-data preservation and surplus fields handling:
   1. In `src/bankflow/staging/loader.py`, ensure ingestion methods for branches, customers, accounts, and transactions preserve original source field values in staging without trimming leading/trailing whitespace or otherwise normalizing them.
   2. Preserve original row representation in `raw_payload`, including leading/trailing whitespace and any surplus CSV fields beyond the declared header schema under `raw_payload['_surplus']`.
