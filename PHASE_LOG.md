@@ -117,9 +117,9 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-16
 - Branch: phase/1-foundation
-- Commit SHA: Pending commit
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/1-foundation>
-- Push status: Ready to push to origin/phase/1-foundation
+- Commit SHA: 7974ae4
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/7974ae4>
+- Push status: Pushed to origin/phase/1-foundation
 - Objective: Resolve all remaining Phase 1 review findings from commit `67db1fd`:
   1. Strengthen test-database guard with strict token-boundary matching and forbidden production tokens (`production`, `prod`, `live`, `backup`, `master`, `main`, `real`, `postgres`), rejecting production-like names (`latest`, `contest`, `production_test_backup`, `prod_test`, `master_test`) while preserving valid test names (`bankflow_test`, `test_db`, `ci_test_warehouse`).
   2. Prevent CSV header normalization from corrupting staging data by strictly rejecting headers with leading/trailing whitespace, unexpected columns, reordered columns, and duplicate columns; and binding `csv.DictReader` explicitly to canonical `fieldnames=expected_columns` after skipping verified headers, ensuring populated transaction IDs can never silently become NULL.
