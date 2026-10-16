@@ -17,8 +17,8 @@
 | TD-009 | Orchestration | Manual CLI first (Click) | Accepted | Prove correctness before introducing scheduler complexity. |
 | TD-010 | Containerization | Docker Compose for local PostgreSQL | Accepted | Provides one-command local PostgreSQL 17 setup with primary and test databases. |
 | TD-011 | Data content | Synthetic records only | Accepted | Prevent privacy and security risks; no live systems or customer records. |
-| TD-012 | Warehouse model | Dimensional star schema | Planned | Clear analytical model with fact/dimension relationships. |
-| TD-013 | Event replay | Database-enforced idempotency | Mandatory | Prevent duplicate facts even across repeated/concurrent attempts. |
+| TD-012 | Warehouse model | Dimensional star schema | Accepted | Clear analytical model with fact/dimension relationships. |
+| TD-013 | Event replay | Database-enforced idempotency | Accepted | Prevent duplicate facts even across repeated/concurrent attempts. |
 | TD-014 | Currency reporting | One currency for simplest MVP or grouped currencies | Open/configurable | Never sum incomparable currencies without an explicit conversion model. |
 | TD-015 | Batch status | Explicit lifecycle states persisted in monitoring | Accepted | Make process state and failure/recovery outcomes inspectable. |
 
@@ -112,3 +112,42 @@ Append entries below rather than silently changing an existing decision.
 - Rationale: Zero raw data duplication, full relational integrity (`ON DELETE CASCADE` on batch), instant access to original raw values, and full traceability.
 - Consequences / trade-offs: Quarantined rows depend on `staging.stg_transactions` remaining intact during the lifecycle of the batch.
 - Verification or evidence: Verified in `tests/test_validation_integration.py::test_defective_dataset_validation_and_quarantine`.
+
+### TD-012 — Dimensional Star Schema with Static Date and Seeded Transaction Types
+- Date / phase: 2026-10-16 / Phase 3
+- Status: Accepted
+- Context: Analytical reporting requires a clean dimensional star schema that separates event facts from descriptive entities, while insulating reports from operational OLTP/staging schema mutations.
+- Options considered:
+  1. Flat denormalized reporting table: simple to load, but duplicates customer and account attributes across every transaction row, making dimension changes difficult to audit.
+  2. Normalized 3NF schema: reduces redundancy but requires complex multi-table joins for analytical queries.
+  3. Star schema with surrogate keys: `fact_transactions` with foreign keys to conformed dimensions (`dim_date`, `dim_transaction_type`, `dim_branch`, `dim_customer`, `dim_account`).
+- Decision: Adopt a dimensional star schema in PostgreSQL `warehouse` schema with integer surrogate primary keys and natural source keys. Pre-populate `dim_date` (2020-2035) via `generate_series` and seed `dim_transaction_type` with accounting classifications.
+- Rationale: Optimal balance between query performance, join simplicity, and analytical clarity. Surrogate keys ensure warehouse joins do not depend on external natural key stability.
+- Consequences / trade-offs: Dimensions must be loaded/upserted in strict relational order (branches -> customers -> accounts) before fact transactions can resolve foreign keys.
+- Verification or evidence: Verified in `tests/test_warehouse_integration.py::test_warehouse_clean_batch_loading_and_reconciliation`.
+
+### TD-013 — Database-Enforced Fact Idempotency via Unique Constraint and Replay Tracking
+- Date / phase: 2026-10-16 / Phase 3
+- Status: Accepted
+- Context: Re-running a batch or replaying files must be completely safe and must never create duplicate facts in `warehouse.fact_transactions`.
+- Options considered:
+  1. Application-level in-memory deduplication: query existing keys before insert. Vulnerable to race conditions and concurrent workers.
+  2. Truncate-and-reload: non-additive, loses incremental load history, destructive to historical data.
+  3. Database-enforced uniqueness with `ON CONFLICT DO NOTHING`: add `CONSTRAINT uq_fact_transactions_source_event UNIQUE (source_system, transaction_id)` on `warehouse.fact_transactions`. Use `INSERT ... ON CONFLICT (source_system, transaction_id) DO NOTHING RETURNING transaction_key`.
+- Decision: Adopt database-enforced uniqueness constraint with `ON CONFLICT DO NOTHING`.
+- Rationale: The database engine guarantees physical idempotency atomically. If an event is replayed, the insert returns nothing, which allows `WarehouseLoader` to accurately increment `records_skipped` and log an informational issue (`RULE_SOURCE_REPLAY_SKIPPED`) with `DISPOSITION_SKIPPED` in `monitoring.data_quality_issues`.
+- Consequences / trade-offs: Source systems must guarantee that `(source_system, transaction_id)` uniquely identifies an immutable business transaction event.
+- Verification or evidence: Verified in `tests/test_warehouse_integration.py::test_warehouse_idempotency_and_replay_safety`.
+
+### TD-018 — Post-Load Reconciliation with Grouped-Currency Monetary Audit
+- Date / phase: 2026-10-16 / Phase 3
+- Status: Accepted
+- Context: Batch ETL must prove that no records or monetary values were lost, corrupted, or silently discarded between staging, validation, and warehouse layers.
+- Options considered:
+  1. Row count verification only: fast, but misses monetary truncation or amount mutation defects.
+  2. Global sum of amounts across all records: invalid when a batch contains mixed currencies (e.g. summing USD and EUR produces nonsense numbers).
+  3. Strict count invariants + monetary value audit grouped by `(currency, status)`: verify `staged == valid + rejected`, `quarantined == rejected`, `valid_staging_txns == inserted + skipped`, and match staging valid transaction sums to warehouse fact sums per `(currency, status)`.
+- Decision: Implement `ReconciliationEngine` checking both count invariants and monetary value audits grouped strictly by currency and status.
+- Rationale: Adheres to core data engineering principles: never sum disparate currencies without exchange rates; guarantee that every staged dollar/cent is accounted for in either warehouse or quarantine.
+- Consequences / trade-offs: Reconciler must exclude historical replays from the current batch's value check so that skipped events do not cause false-positive value discrepancies.
+- Verification or evidence: Verified in `tests/test_warehouse_integration.py::test_warehouse_reconciliation_detects_discrepancy` and clean batch reconciliation tests.

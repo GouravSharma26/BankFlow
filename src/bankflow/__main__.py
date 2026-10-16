@@ -19,6 +19,9 @@ from bankflow.staging.loader import StagingLoader
 from bankflow.staging.schema import init_staging_schema
 from bankflow.validation.schema import init_validation_schema
 from bankflow.validation.validator import ValidationEngine
+from bankflow.warehouse.loader import WarehouseLoader
+from bankflow.warehouse.reconciliation import ReconciliationEngine
+from bankflow.warehouse.schema import init_warehouse_schema
 
 
 @click.group()
@@ -58,11 +61,12 @@ def init_db_cmd(test_db: bool):
         with get_connection(db_config) as conn:
             init_staging_schema(conn)
             init_validation_schema(conn)
-        click.secho(f"[OK] Successfully initialized staging, monitoring, and quarantine schemas in '{db_config.name}'.", fg="green")
+            init_warehouse_schema(conn)
+        click.secho(f"[OK] Successfully initialized staging, monitoring, quarantine, and warehouse schemas in '{db_config.name}'.", fg="green")
     except Exception as ex:
         click.secho(f"[ERROR] Database initialization failed: {ex}", fg="red")
         sys.exit(1)
-        sys.exit(1)
+
 
 
 @cli.command("generate")
@@ -190,6 +194,119 @@ def validate_cmd(batch_id: str, test_db: bool):
         sys.exit(1)
 
 
+@cli.command("load")
+@click.argument("batch_id")
+@click.option("--test-db", is_flag=True, help="Load batch into test database warehouse instead of primary.")
+def load_cmd(batch_id: str, test_db: bool):
+    """Load validated staging records for a batch into the dimensional warehouse."""
+    settings = get_settings()
+    db_config = settings.test_db if test_db else settings.db
+
+    try:
+        with get_connection(db_config) as conn:
+            loader = WarehouseLoader(conn)
+            click.echo(f"Loading validated records for batch '{batch_id}' into warehouse...")
+            summary = loader.load_batch(batch_id)
+
+            click.secho(f"[OK] Warehouse loading completed for batch '{batch_id}'!", fg="green")
+            click.echo(f"  Dimensions loaded:")
+            click.echo(f"    - Branches:  {summary.branches_loaded}")
+            click.echo(f"    - Customers: {summary.customers_loaded}")
+            click.echo(f"    - Accounts:  {summary.accounts_loaded}")
+            click.echo(f"  Fact Transactions:")
+            click.echo(f"    - Inserted:  {summary.records_inserted}")
+            click.echo(f"    - Skipped:   {summary.records_skipped} (idempotent replay)")
+            recon_color = "green" if summary.reconciliation_status == "RECONCILED" else "red"
+            click.secho(f"  Reconciliation: {summary.reconciliation_status}", fg=recon_color)
+    except Exception as ex:
+        click.secho(f"[ERROR] Warehouse loading failed: {ex}", fg="red")
+        sys.exit(1)
+
+
+@cli.command("reconcile")
+@click.argument("batch_id")
+@click.option("--test-db", is_flag=True, help="Run reconciliation in test database instead of primary.")
+def reconcile_cmd(batch_id: str, test_db: bool):
+    """Audit count and monetary value reconciliation across staging, validation, and warehouse."""
+    settings = get_settings()
+    db_config = settings.test_db if test_db else settings.db
+
+    try:
+        with get_connection(db_config) as conn:
+            engine = ReconciliationEngine(conn)
+            click.echo(f"Auditing reconciliation for batch '{batch_id}'...")
+            report = engine.reconcile_batch(batch_id)
+
+            if report.is_reconciled:
+                click.secho(f"[RECONCILED] Batch '{batch_id}' is fully reconciled across all layers!", fg="green")
+            else:
+                click.secho(f"[UNRECONCILED] Discrepancies detected for batch '{batch_id}':", fg="red")
+                for d in report.discrepancies:
+                    click.echo(f"  - {d}")
+
+            click.echo("  Count Audit:")
+            click.echo(f"    Extracted:    {report.extracted_count}")
+            click.echo(f"    Staged:       {report.staged_count}")
+            click.echo(f"    Valid:        {report.valid_count}")
+            click.echo(f"    Rejected:     {report.rejected_count}")
+            click.echo(f"    Inserted:     {report.inserted_count}")
+            click.echo(f"    Skipped:      {report.skipped_count}")
+            click.echo(f"    Quarantined:  {report.quarantined_count}")
+    except Exception as ex:
+        click.secho(f"[ERROR] Reconciliation check failed: {ex}", fg="red")
+        sys.exit(1)
+
+
+@cli.command("run")
+@click.option("--input-dir", "-i", default="data/samples", show_default=True, type=click.Path(exists=True, path_type=Path), help="Directory containing CSV files.")
+@click.option("--batch-id", help="Optional explicit batch identifier.")
+@click.option("--test-db", is_flag=True, help="Run ETL pipeline in test database instead of primary.")
+def run_pipeline_cmd(input_dir: Path, batch_id: Optional[str], test_db: bool):
+    """Run full batch ETL pipeline: stage -> validate -> load -> reconcile."""
+    settings = get_settings()
+    db_config = settings.test_db if test_db else settings.db
+
+    try:
+        with get_connection(db_config) as conn:
+            # 1. Staging
+            loader = StagingLoader(conn)
+            click.echo(f"1. Ingesting staging records from {input_dir}...")
+            result = loader.ingest_dataset_directory(input_dir, batch_id=batch_id)
+            if result["status"] != "SUCCEEDED":
+                click.secho(f"[ERROR] Staging failed: [{result.get('error_code')}] {result.get('error_message')}", fg="red")
+                sys.exit(1)
+            b_id = result["batch_id"]
+            click.secho(f"   [OK] Staged {result['records_staged']} records (batch: {b_id})", fg="green")
+
+            # 2. Validation
+            click.echo(f"2. Validating staged records for batch '{b_id}'...")
+            v_engine = ValidationEngine(conn)
+            v_summary = v_engine.validate_batch(b_id)
+            v_color = "green" if v_summary.batch_status == "SUCCEEDED" else "yellow"
+            click.secho(f"   [{v_summary.batch_status}] Valid: {v_summary.records_valid} | Rejected: {v_summary.records_rejected}", fg=v_color)
+
+            # 3. Warehouse Loading
+            click.echo(f"3. Loading valid records into dimensional warehouse...")
+            wh_loader = WarehouseLoader(conn)
+            wh_summary = wh_loader.load_batch(b_id)
+            click.secho(f"   [OK] Inserted {wh_summary.records_inserted} facts | Skipped {wh_summary.records_skipped} replays", fg="green")
+
+            # 4. Reconciliation
+            click.echo(f"4. Audit reconciliation...")
+            recon_engine = ReconciliationEngine(conn)
+            report = recon_engine.reconcile_batch(b_id)
+            if report.is_reconciled:
+                click.secho(f"   [RECONCILED] Pipeline run for batch '{b_id}' completed and verified!", fg="green")
+            else:
+                click.secho(f"   [UNRECONCILED] Discrepancies detected:", fg="red")
+                for d in report.discrepancies:
+                    click.echo(f"     - {d}")
+
+    except Exception as ex:
+        click.secho(f"[ERROR] Pipeline run failed: {ex}", fg="red")
+        sys.exit(1)
+
+
 @cli.command("batch-status")
 @click.argument("batch_id")
 @click.option("--test-db", is_flag=True, help="Check batch status in test database.")
@@ -204,6 +321,7 @@ def batch_status_cmd(batch_id: str, test_db: bool):
                 cur.execute("""
                     SELECT batch_id, source_name, started_at, completed_at, status,
                            records_extracted, records_staged, records_valid, records_rejected,
+                           records_inserted, records_skipped, reconciliation_status,
                            error_summary
                     FROM monitoring.etl_batch_runs
                     WHERE batch_id = %s;
@@ -224,8 +342,13 @@ def batch_status_cmd(batch_id: str, test_db: bool):
                 click.echo(f"Records Staged:     {row[6]}")
                 click.echo(f"Records Valid:      {row[7]}")
                 click.echo(f"Records Rejected:   {row[8]}")
-                if row[9]:
-                    click.echo(f"Error Summary:      {row[9]}")
+                click.echo(f"Records Inserted:   {row[9] or 0}")
+                click.echo(f"Records Skipped:    {row[10] or 0}")
+                if row[11]:
+                    recon_color = "green" if row[11] == "RECONCILED" else "red"
+                    click.secho(f"Reconciliation:     {row[11]}", fg=recon_color)
+                if row[12]:
+                    click.echo(f"Error Summary:      {row[12]}")
 
                 # Query issue count from monitoring.data_quality_issues
                 cur.execute("""

@@ -203,8 +203,109 @@ Purpose/grain: one accepted transaction event under the defined source event ide
 - **Schema / View:** `quarantine.vw_quarantined_transactions`
 - **Purpose / Grain:** Diagnostic view joining `quarantine.quarantined_records` with `staging.stg_transactions` on `source_row_id`. Exposes the full original raw payload, raw amounts, raw timestamps, and metadata without physical data duplication.
 
-## 5. Warehouse Dimensions and Facts (Phase 3+)
-... (to be populated in Phase 3)
+## 5. Warehouse Dimensions and Facts (Phase 3)
+
+### 5.1 `warehouse.dim_date`
+- **Schema / Table:** `warehouse.dim_date`
+- **Purpose / Grain:** Conformed calendar dimension. One row per calendar day (pre-populated 2020 through 2035).
+- **Keys / Constraints:** PK (`date_key`), Unique constraint on `full_date`.
+
+| Column | PostgreSQL type | Nullable? | Key/constraint | Source / derivation | Meaning |
+|---|---|---|---|---|---|
+| `date_key` | `INT` | No | PK | Formatted `YYYYMMDD` integer | Calendar date surrogate key |
+| `full_date` | `DATE` | No | Unique, Index | Date sequence | Calendar date |
+| `day_of_month` | `INT` | No | None | Extract day | Day of month (1-31) |
+| `day_of_week` | `INT` | No | None | Extract ISO DOW | Day of week (1=Monday, 7=Sunday) |
+| `day_name` | `VARCHAR(16)` | No | None | Date format | Full day name (e.g. 'Monday') |
+| `week_of_year` | `INT` | No | None | Extract ISO week | ISO week number (1-53) |
+| `month_number` | `INT` | No | None | Extract month | Month number (1-12) |
+| `month_name` | `VARCHAR(16)` | No | None | Date format | Full month name (e.g. 'January') |
+| `quarter_number` | `INT` | No | None | Extract quarter | Quarter (1-4) |
+| `year_number` | `INT` | No | None | Extract year | Four-digit calendar year |
+| `is_weekend` | `BOOLEAN` | No | None | ISO DOW in (6, 7) | True if Saturday or Sunday |
+
+### 5.2 `warehouse.dim_transaction_type`
+- **Schema / Table:** `warehouse.dim_transaction_type`
+- **Purpose / Grain:** Conformed dimension for banking transaction classifications. One row per supported transaction type code.
+- **Keys / Constraints:** PK (`type_key`), Unique constraint on `transaction_type_code`. Seeded with DEPOSIT, WITHDRAWAL, TRANSFER, PAYMENT, FEE, REVERSAL.
+
+| Column | PostgreSQL type | Nullable? | Key/constraint | Source / derivation | Meaning |
+|---|---|---|---|---|---|
+| `type_key` | `SERIAL` | No | PK | Surrogate autoincrement | Dimension primary key |
+| `transaction_type_code` | `VARCHAR(32)` | No | Unique | Source code | Business transaction type code |
+| `transaction_type_name` | `VARCHAR(64)` | No | None | Standard label | Human-readable transaction type name |
+| `transaction_family` | `VARCHAR(32)` | No | None | Accounting classification | Transaction family (CREDIT, DEBIT, TRANSFER, ADJUSTMENT) |
+
+### 5.3 `warehouse.dim_branch`
+- **Schema / Table:** `warehouse.dim_branch`
+- **Purpose / Grain:** Dimension representing physical/operational bank branch locations. One row per unique branch.
+- **Keys / Constraints:** PK (`branch_key`), Unique constraint on `branch_id`, Index on `region`.
+
+| Column | PostgreSQL type | Nullable? | Key/constraint | Source / derivation | Meaning |
+|---|---|---|---|---|---|
+| `branch_key` | `SERIAL` | No | PK | Surrogate autoincrement | Dimension primary key |
+| `branch_id` | `VARCHAR(64)` | No | Unique | `staging.stg_branches.branch_id` | Natural business branch identifier |
+| `branch_name` | `VARCHAR(128)` | No | None | `staging.stg_branches.branch_name` | Branch facility name |
+| `region` | `VARCHAR(64)` | No | Index | `staging.stg_branches.region` | Geographic administrative region |
+| `created_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Dimension record creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Dimension record last updated timestamp |
+
+### 5.4 `warehouse.dim_customer`
+- **Schema / Table:** `warehouse.dim_customer`
+- **Purpose / Grain:** Customer dimension. One row per unique synthetic banking customer.
+- **Keys / Constraints:** PK (`customer_key`), Unique constraint on `customer_id`, Indexes on `customer_segment`, `customer_status`.
+
+| Column | PostgreSQL type | Nullable? | Key/constraint | Source / derivation | Meaning |
+|---|---|---|---|---|---|
+| `customer_key` | `SERIAL` | No | PK | Surrogate autoincrement | Dimension primary key |
+| `customer_id` | `VARCHAR(64)` | No | Unique | `staging.stg_customers.customer_id` | Natural business customer identifier |
+| `customer_segment` | `VARCHAR(32)` | No | Index | `staging.stg_customers.customer_segment` | Customer segment (RETAIL, PREMIUM, etc.) |
+| `customer_status` | `VARCHAR(32)` | No | Index | `staging.stg_customers.customer_status` | Customer lifecycle status |
+| `created_date` | `DATE` | No | None | Parsed `created_date_raw` | Customer onboarding date |
+| `created_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Dimension record creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Dimension record last updated timestamp |
+
+### 5.5 `warehouse.dim_account`
+- **Schema / Table:** `warehouse.dim_account`
+- **Purpose / Grain:** Account dimension. One row per unique banking account, linking to customer and branch dimensions.
+- **Keys / Constraints:** PK (`account_key`), Unique constraint on `account_id`, FK (`customer_key` -> `dim_customer`), FK (`branch_key` -> `dim_branch`), Indexes on `customer_key`, `branch_key`, `currency`.
+
+| Column | PostgreSQL type | Nullable? | Key/constraint | Source / derivation | Meaning |
+|---|---|---|---|---|---|
+| `account_key` | `SERIAL` | No | PK | Surrogate autoincrement | Dimension primary key |
+| `account_id` | `VARCHAR(64)` | No | Unique | `staging.stg_accounts.account_id` | Natural business account identifier |
+| `customer_key` | `INT` | No | FK, Index | Lookup `dim_customer` | Foreign key to customer dimension |
+| `branch_key` | `INT` | No | FK, Index | Lookup `dim_branch` | Foreign key to branch dimension |
+| `account_type` | `VARCHAR(32)` | No | None | `staging.stg_accounts.account_type` | Account product type (CHECKING, SAVINGS) |
+| `account_status` | `VARCHAR(32)` | No | None | `staging.stg_accounts.account_status` | Account status (OPEN, CLOSED) |
+| `currency` | `VARCHAR(10)` | No | Index | `staging.stg_accounts.currency` | ISO currency code (USD, EUR, GBP) |
+| `opened_date` | `DATE` | No | None | Parsed `opened_date_raw` | Account opening date |
+| `created_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Dimension record creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Dimension record last updated timestamp |
+
+### 5.6 `warehouse.fact_transactions`
+- **Schema / Table:** `warehouse.fact_transactions`
+- **Purpose / Grain:** Central transactional fact table. Grain: exactly one row per accepted banking transaction event. Does NOT represent account balances.
+- **Keys / Constraints:** PK (`transaction_key`), Unique constraint on `(source_system, transaction_id)`, FKs to `dim_account`, `dim_customer`, `dim_branch`, `dim_date`, `dim_transaction_type`, and `monitoring.etl_batch_runs`. Check constraint `amount > 0.00`. Indexes on foreign keys, status, and currency.
+
+| Column | PostgreSQL type | Nullable? | Key/constraint | Source / derivation | Meaning |
+|---|---|---|---|---|---|
+| `transaction_key` | `BIGSERIAL` | No | PK | Surrogate autoincrement | Fact transaction primary key |
+| `transaction_id` | `VARCHAR(64)` | No | Unique tuple | `staging.stg_transactions.transaction_id` | Source transaction business identifier |
+| `source_system` | `VARCHAR(64)` | No | Unique tuple | `staging.stg_transactions.source_system` | Originating source system identifier |
+| `account_key` | `INT` | No | FK, Index | Lookup `dim_account` | Foreign key to account dimension |
+| `customer_key` | `INT` | No | FK, Index | Lookup via `dim_account` | Foreign key to customer dimension |
+| `branch_key` | `INT` | No | FK, Index | Lookup via `dim_account` | Foreign key to branch dimension |
+| `date_key` | `INT` | No | FK, Index | Derived from timestamp UTC | Foreign key to calendar date dimension |
+| `type_key` | `INT` | No | FK, Index | Lookup `dim_transaction_type` | Foreign key to transaction type dimension |
+| `amount` | `NUMERIC(18, 2)` | No | Check (> 0.00) | Parsed `amount_raw` | Transaction monetary value |
+| `currency` | `VARCHAR(10)` | No | Index | `staging.stg_transactions.currency` | Transaction ISO currency code |
+| `status` | `VARCHAR(32)` | No | Index | `staging.stg_transactions.status` | Transaction status (COMPLETED, PENDING, FAILED) |
+| `channel` | `VARCHAR(32)` | No | None | `staging.stg_transactions.channel` | Initiation channel (ONLINE, MOBILE, ATM, BRANCH) |
+| `transaction_timestamp` | `TIMESTAMPTZ` | No | None | Parsed `transaction_timestamp_raw` | Exact event occurrence timestamp |
+| `source_batch_id` | `VARCHAR(64)` | No | FK, Index | `monitoring.etl_batch_runs.batch_id` | Lineage to ingestion ETL batch |
+| `source_row_id` | `BIGINT` | No | None | `staging.stg_transactions.source_row_id` | Lineage to exact staging row |
+| `loaded_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Warehouse load timestamp |
 
 ## 6. Change Control
 
