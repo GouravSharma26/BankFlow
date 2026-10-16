@@ -11,6 +11,7 @@
 - Baseline commit: `cc2b371`
 - Latest reviewed commit: `d4e3c02`
 - Implementation baseline merged to main: `7fc540d`
+- Corrective implementation commit: `40ed5ff`
 - Corrective implementation branch: `phase/3-warehouse-loading`
 
 ## How to Maintain This File
@@ -323,8 +324,8 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED LOCALLY — AWAITING REVIEW
 - Date: 2026-10-17
 - Branch: phase/3-warehouse-loading
-- Commit SHA: Pending follow-up commit
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/3-warehouse-loading>
+- Commit SHA: 40ed5ff
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/40ed5ff>
 - Push status: In progress (push to origin/phase/3-warehouse-loading)
 - Objective: Address all 8 Phase 3 review findings covering warehouse join normalization, conflicting-replay detection and quarantine, CLI non-zero exit codes on reconciliation failure, 2-decimal monetary scale enforcement, historical-dimension dependency preflight guards, batch lifecycle status allowlist, extended date dimension coverage, and documentation consistency.
 - Changes delivered:
