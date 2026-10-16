@@ -6,17 +6,17 @@ Status key: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `VERIFIED`
 
 Initial status for all implementation phases: **NOT STARTED**. Documentation preparation is not implementation completion.
 
-## Phase 0 — Repository Baseline and Agent Alignment
+## Phase 0 — Repository Baseline and Agent Alignment (Status: VERIFIED)
 
 **Goal:** Make the project instructions and GitHub workflow reliable before code is written.
 
-- [ ] Inspect repository contents, current Git status, current branch, and remote URL.
-- [ ] Verify the expected GitHub remote is `https://github.com/GouravSharma26/BankFlow.git` or the equivalent HTTPS URL without `.git`.
-- [ ] Preserve the existing `plan.md`; do not regenerate or overwrite it unnecessarily.
-- [ ] Ensure all supporting docs are present and internally consistent.
-- [ ] Establish the initial baseline branch/commit if the repository has no code history.
-- [ ] Push the baseline to GitHub if credentials and permissions permit.
-- [ ] Record baseline commit, push status, and any permission blocker in `PHASE_LOG.md`.
+- [x] Inspect repository contents, current Git status, current branch, and remote URL.
+- [x] Verify the expected GitHub remote is `https://github.com/GouravSharma26/BankFlow.git` or the equivalent HTTPS URL without `.git`.
+- [x] Preserve the existing `plan.md`; do not regenerate or overwrite it unnecessarily.
+- [x] Ensure all supporting docs are present and internally consistent.
+- [x] Establish the initial baseline branch/commit if the repository has no code history.
+- [x] Push the baseline to GitHub if credentials and permissions permit.
+- [x] Record baseline commit, push status, and any permission blocker in `PHASE_LOG.md`.
 
 **Exit criteria:** A clean repository baseline contains the plan and agent workflow docs, and the GitHub status is explicitly recorded. This phase does not mark application code complete.
 
