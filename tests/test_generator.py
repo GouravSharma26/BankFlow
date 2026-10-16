@@ -86,6 +86,12 @@ def test_defect_injection_scenarios():
     # Verify injected defect conditions exist in the output
     assert "" in txn_ids, "Missing transaction ID defect not found"
     assert len(txn_ids) != len(set(txn_ids)), "Duplicate transaction ID defect not found"
+    # Ensure standard defect configuration produces a duplicate of a valid, non-empty ID
+    non_empty_ids = [tid for tid in txn_ids if tid]
+    assert len(non_empty_ids) != len(set(non_empty_ids)), "Duplicate of non-empty transaction ID defect not found"
+    dup_non_empty = [tid for tid in set(non_empty_ids) if non_empty_ids.count(tid) > 1]
+    assert len(dup_non_empty) >= 1, "Duplicate of valid non-empty transaction ID not found"
+
     assert "" in account_ids, "Missing account ID defect not found"
     assert "ACC-999999" in account_ids, "Unknown account reference defect not found"
     assert "CRYPTO_TRADE" in types, "Unsupported transaction type defect not found"
@@ -129,6 +135,87 @@ def test_date_range_validation():
 
     with pytest.raises(ValueError, match="cannot be before start_date"):
         gen.generate_transactions(accounts, 10, start_date="2026-05-01", end_date="2026-01-01")
+
+
+def test_date_range_inclusive_boundaries():
+    """Verify that end_date includes transactions up to 23:59:59 UTC."""
+    gen = SyntheticDataGenerator(seed=42)
+    customers = gen.generate_customers(2)
+    branches = gen.generate_branches(2)
+    accounts = gen.generate_accounts(customers, branches, 2)
+
+    # Single day boundary check
+    txns_single = gen.generate_transactions(
+        accounts,
+        count=50,
+        start_date="2026-06-15",
+        end_date="2026-06-15",
+    )
+    for t in txns_single:
+        assert t["transaction_timestamp"].startswith("2026-06-15")
+        assert "2026-06-15T00:00:00+00:00" <= t["transaction_timestamp"] <= "2026-06-15T23:59:59+00:00"
+
+    # Multi-day boundary check
+    txns_multi = gen.generate_transactions(
+        accounts,
+        count=100,
+        start_date="2026-01-01",
+        end_date="2026-01-03",
+    )
+    for t in txns_multi:
+        assert "2026-01-01T00:00:00+00:00" <= t["transaction_timestamp"] <= "2026-01-03T23:59:59+00:00"
+
+
+def test_cli_generate_date_options(tmp_path: Path):
+    """Test CLI argument parsing, custom date ranges, invalid/reversed dates."""
+    from click.testing import CliRunner
+    from bankflow.__main__ import cli
+
+    runner = CliRunner()
+
+    # 1. Successful custom date range
+    out_dir = tmp_path / "cli_dates"
+    res = runner.invoke(
+        cli,
+        [
+            "generate",
+            "--output-dir", str(out_dir),
+            "--start-date", "2026-03-01",
+            "--end-date", "2026-03-05",
+            "--branches", "2",
+            "--customers", "2",
+            "--accounts", "2",
+            "--transactions", "10",
+        ],
+    )
+    assert res.exit_code == 0
+    assert "[OK] Generated 4 CSV files" in res.output
+    assert (out_dir / "transactions.csv").exists()
+
+    # 2. Reversed dates (end before start)
+    res_reversed = runner.invoke(
+        cli,
+        [
+            "generate",
+            "--output-dir", str(tmp_path / "cli_rev"),
+            "--start-date", "2026-03-10",
+            "--end-date", "2026-03-01",
+        ],
+    )
+    assert res_reversed.exit_code != 0
+    assert "cannot be before start date" in res_reversed.output
+
+    # 3. Invalid date format
+    res_invalid = runner.invoke(
+        cli,
+        [
+            "generate",
+            "--output-dir", str(tmp_path / "cli_inv"),
+            "--start-date", "invalid-date",
+        ],
+    )
+    assert res_invalid.exit_code != 0
+    assert "Invalid date format" in res_invalid.output
 
 
 def test_export_all_creates_valid_csvs(tmp_path: Path):

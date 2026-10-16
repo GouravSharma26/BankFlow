@@ -6,6 +6,7 @@ Reads configuration from environment variables and optional .env file.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlparse
@@ -97,12 +98,40 @@ class DatabaseConfig:
     def is_test_database(self) -> bool:
         """
         Guardrail check to ensure destructive teardowns only target dedicated test databases.
-        Must end with '_test' or contain 'test', and cannot be a production database.
+        Uses strict token-boundary matching to ensure 'test' is an isolated token.
+        Rejects substrings like 'latest', 'contest', and any name containing production-like keywords
+        (e.g., 'production_test_backup', 'prod', 'live', 'backup', 'master').
+        Preserves valid test names such as 'bankflow_test', 'test_db', and 'ci_test_warehouse'.
         """
-        lower_name = self.name.lower()
-        if lower_name in {"bankflow", "postgres", "production", "prod", "warehouse", "master"}:
+        lower_name = self.name.lower().strip()
+        if not lower_name:
             return False
-        return lower_name.endswith("_test") or "test" in lower_name
+
+        # Split on non-alphanumeric boundaries (underscores, hyphens, dots, etc.)
+        tokens = [t for t in re.split(r"[^a-zA-Z0-9]+", lower_name) if t]
+        if not tokens:
+            return False
+
+        # Forbidden production-like tokens: reject immediately regardless of 'test' presence
+        FORBIDDEN_PROD_TOKENS = {
+            "production",
+            "prod",
+            "live",
+            "backup",
+            "master",
+            "main",
+            "real",
+            "postgres",
+        }
+        if any(token in FORBIDDEN_PROD_TOKENS for token in tokens):
+            return False
+
+        # Exact primary application database name without test suffix is rejected
+        if lower_name == "bankflow":
+            return False
+
+        # Must contain 'test' as an exact, isolated token
+        return "test" in tokens
 
     def assert_safe_for_reset(self) -> None:
         """Raise an error if attempting destructive operations on a non-test database."""

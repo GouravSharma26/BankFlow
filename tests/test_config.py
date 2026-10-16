@@ -50,15 +50,33 @@ def test_database_config_from_url(monkeypatch):
 
 
 def test_is_test_database_guard():
-    # Safe test databases
+    # Safe test databases (strict token boundary matches)
     assert DatabaseConfig(name="bankflow_test").is_test_database() is True
     assert DatabaseConfig(name="test_db").is_test_database() is True
     assert DatabaseConfig(name="ci_test_warehouse").is_test_database() is True
+    assert DatabaseConfig(name="bankflow-test").is_test_database() is True
+    assert DatabaseConfig(name="test").is_test_database() is True
 
-    # Non-test / unsafe databases
+    # Substrings containing 'test' as a non-token must be rejected
+    assert DatabaseConfig(name="latest").is_test_database() is False
+    assert DatabaseConfig(name="contest").is_test_database() is False
+    assert DatabaseConfig(name="attest").is_test_database() is False
+    assert DatabaseConfig(name="detest_db").is_test_database() is False
+    assert DatabaseConfig(name="greatest_app").is_test_database() is False
+
+    # Production-like and unsafe keywords must be rejected even if 'test' token is present
+    assert DatabaseConfig(name="production_test_backup").is_test_database() is False
+    assert DatabaseConfig(name="prod_test").is_test_database() is False
+    assert DatabaseConfig(name="test_live").is_test_database() is False
+    assert DatabaseConfig(name="test_backup").is_test_database() is False
+    assert DatabaseConfig(name="master_test").is_test_database() is False
+    assert DatabaseConfig(name="main_test_db").is_test_database() is False
+
+    # Standard production / non-test databases
     assert DatabaseConfig(name="bankflow").is_test_database() is False
     assert DatabaseConfig(name="postgres").is_test_database() is False
     assert DatabaseConfig(name="production_warehouse").is_test_database() is False
+    assert DatabaseConfig(name="").is_test_database() is False
 
 
 def test_assert_safe_for_reset_raises_on_production():

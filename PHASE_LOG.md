@@ -5,11 +5,11 @@
 ## Current Status
 
 - Overall status: `PHASE 1 VERIFIED`
-- Current phase: `Phase 1 — Python Foundation, Synthetic Generator, and Staging` (Completed)
+- Current phase: `Phase 1 — Python Foundation, Synthetic Generator, and Staging` (Review fixes complete)
 - Last verified implementation phase: `Phase 1 — Python Foundation, Synthetic Generator, and Staging`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 - Baseline commit: `b863ee1`
-- Last reviewed commit: `1757c94`
+- Last reviewed commit: `67db1fd`
 
 ## How to Maintain This File
 
@@ -111,6 +111,43 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - Rewrote URL config test with direct assertions on constructor, `from_url`, and `from_env`.
 - Known limitations: Dimensional warehouse loading and Phase 2 validation system are intentionally deferred to Phase 2 and Phase 3.
 - Next action: Submit Phase 1 review fixes for final approval; next phase is Phase 2 — Validation, Quarantine, and Data Contracts.
+
+### Phase 1 — Review Fixes (Database Guard, Header Contract, Date Ranges, Batch Collision)
+
+- Status: VERIFIED
+- Date: 2026-10-16
+- Branch: phase/1-foundation
+- Commit SHA: Pending commit
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/1-foundation>
+- Push status: Ready to push to origin/phase/1-foundation
+- Objective: Resolve all remaining Phase 1 review findings from commit `67db1fd`:
+  1. Strengthen test-database guard with strict token-boundary matching and forbidden production tokens (`production`, `prod`, `live`, `backup`, `master`, `main`, `real`, `postgres`), rejecting production-like names (`latest`, `contest`, `production_test_backup`, `prod_test`, `master_test`) while preserving valid test names (`bankflow_test`, `test_db`, `ci_test_warehouse`).
+  2. Prevent CSV header normalization from corrupting staging data by strictly rejecting headers with leading/trailing whitespace, unexpected columns, reordered columns, and duplicate columns; and binding `csv.DictReader` explicitly to canonical `fieldnames=expected_columns` after skipping verified headers, ensuring populated transaction IDs can never silently become NULL.
+  3. Correct duplicate-ID defect generation in standard defect configuration to inject both a missing transaction ID and a separate duplicate of a valid, non-empty ID (sourced from an unaffected row).
+  4. Complete date-range support with `--start-date` and `--end-date` options in CLI and generator, defining the end date as inclusive across the full calendar day in UTC (23:59:59).
+  5. Enforce explicit batch-ID collision behavior, verifying that attempting to reuse an existing batch ID raises `RULE_BATCH_ALREADY_EXISTS` without modifying the original batch run record in `monitoring.etl_batch_runs` or duplicating staged rows in `staging.stg_*`, and returns a useful error to the CLI caller.
+  6. Correct stale documentation in `README.md` and `HUMAN_SETUP.md` to reflect implemented Phase 1 and current PostgreSQL setup, explicitly marking the validation engine, dimensional warehouse, analytics, and dashboard as future work.
+- Changes delivered:
+  - `src/bankflow/config.py`: Implemented regex tokenization `re.split(r"[^a-zA-Z0-9]+", name)` and forbidden production keyword rejection list.
+  - `src/bankflow/constants.py`: Added `RULE_BATCH_ALREADY_EXISTS = "BATCH_ALREADY_EXISTS"`.
+  - `src/bankflow/generator/generator.py`: Defined UTC end date inclusive across 23:59:59; sourced duplicate transaction ID from an unaffected row (`txns[-1]`) in standard defect config.
+  - `src/bankflow/staging/loader.py`: Enforced strict header whitespace rejection and column ordering checks; bound DictReader to canonical columns; guarded batch registration against collision mutation.
+  - `src/bankflow/__main__.py`: Added `--start-date` and `--end-date` options with ISO format and order validation; formatted batch collision CLI error message.
+  - `tests/test_config.py`: Added regression test coverage for accepted names (`bankflow_test`, `test_db`, `ci_test_warehouse`, `bankflow-test`, `test`) and rejected names (`latest`, `contest`, `attest`, `detest_db`, `greatest_app`, `production_test_backup`, `prod_test`, `test_live`, `test_backup`, `master_test`, `main_test_db`, `bankflow`, `postgres`, `production_warehouse`, `""`).
+  - `tests/test_generator.py`: Verified standard defect configuration contains both missing transaction ID and duplicate of valid non-empty transaction ID; tested inclusive date boundaries (23:59:59 UTC) and CLI date range argument parsing and validation.
+  - `tests/test_staging_validation.py`: Added tests for header whitespace rejection, column ordering mismatch rejection, and proof that populated transaction IDs cannot become NULL.
+  - `tests/test_db_integration.py`: Added `test_batch_id_collision_preserves_original_state` ensuring second run is rejected with `RULE_BATCH_ALREADY_EXISTS`, original monitoring batch run remains `SUCCEEDED` with original counts, staged rows are not duplicated, and CLI output informs the caller.
+  - `README.md` & `HUMAN_SETUP.md`: Reflected Phase 1 implementation status, actual repository layout, CLI commands, and marked future phases.
+- Tests/commands executed:
+  - `python -m pytest tests -v` (28 passed, 0 skipped, 0 failed in 19s against live `bankflow_test` PostgreSQL instance)
+  - `python -m bankflow test-connection; python -m bankflow test-connection --test-db`
+  - `git diff --check` (clean, 0 whitespace errors)
+- Test outcomes: 28 passed, 0 skipped, 0 failed.
+- Acceptance evidence: All 6 review requirements verified with regression tests; integration tests executed against PostgreSQL container on 127.0.0.1:5433; git diff clean with no secrets or extraneous files.
+- Review findings: All remaining findings from commit `67db1fd` resolved.
+- Fixes or accepted risks: None.
+- Known limitations: Phase 2 validation and quarantine engine, Phase 3 dimensional warehouse, Phase 4 analytics, and Phase 5 dashboard are planned future phases.
+- Next action: Submit Phase 1 review fixes for final review.
 
 ## Phase Entry Template
 

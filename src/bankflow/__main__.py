@@ -68,6 +68,8 @@ def init_db_cmd(test_db: bool):
 @click.option("--customers", default=25, show_default=True, type=int, help="Number of customers.")
 @click.option("--accounts", default=40, show_default=True, type=int, help="Number of accounts.")
 @click.option("--transactions", default=100, show_default=True, type=int, help="Number of transactions.")
+@click.option("--start-date", default="2026-01-01", show_default=True, help="Start date (YYYY-MM-DD) for transaction event generation.")
+@click.option("--end-date", default="2026-03-31", show_default=True, help="End date (YYYY-MM-DD) inclusive for transaction event generation.")
 @click.option("--with-defects", is_flag=True, help="Inject standard test defect scenarios for data quality testing.")
 def generate_cmd(
     output_dir: Path,
@@ -76,19 +78,34 @@ def generate_cmd(
     customers: int,
     accounts: int,
     transactions: int,
+    start_date: str,
+    end_date: str,
     with_defects: bool,
 ):
     """Generate synthetic CSV files with fixed seed and optional defect cases."""
+    from datetime import datetime
+    try:
+        s_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        e_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        if e_dt < s_dt:
+            click.secho(f"[ERROR] End date ({end_date}) cannot be before start date ({start_date}).", fg="red")
+            sys.exit(1)
+    except ValueError as ex:
+        click.secho(f"[ERROR] Invalid date format (expected YYYY-MM-DD): {ex}", fg="red")
+        sys.exit(1)
+
     defect_config = DefectConfig.standard_test_defects() if with_defects else DefectConfig.clean()
     generator = SyntheticDataGenerator(seed=seed, defect_config=defect_config)
 
-    click.echo(f"Generating synthetic dataset (seed={seed}, defects={with_defects})...")
+    click.echo(f"Generating synthetic dataset (seed={seed}, defects={with_defects}, {start_date} to {end_date})...")
     files = generator.export_all(
         output_dir=output_dir,
         num_branches=branches,
         num_customers=customers,
         num_accounts=accounts,
         num_transactions=transactions,
+        start_date=start_date,
+        end_date=end_date,
     )
 
     click.secho(f"[OK] Generated {len(files)} CSV files in {output_dir}:", fg="green")

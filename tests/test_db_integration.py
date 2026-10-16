@@ -15,6 +15,7 @@ from bankflow.config import DatabaseConfig, get_settings
 from bankflow.constants import (
     BATCH_STATUS_FAILED,
     BATCH_STATUS_SUCCEEDED,
+    RULE_BATCH_ALREADY_EXISTS,
     RULE_FILE_EMPTY,
     RULE_FILE_REQUIRED_COLUMN_MISSING,
 )
@@ -183,3 +184,78 @@ def test_staging_failed_batch_accounting(tmp_path: Path):
             assert row[1] == 1  # records_extracted
             assert row[2] == 1  # records_staged
             assert RULE_FILE_EMPTY in row[3]
+
+
+@pytest.mark.integration
+def test_batch_id_collision_preserves_original_state(clean_dataset_dir: Path):
+    """
+    Verify that attempting to reuse an existing batch_id is rejected without
+    modifying the original batch record or duplicating staged rows, and produces
+    a useful error for the CLI caller.
+    """
+    from click.testing import CliRunner
+    from bankflow.__main__ import cli
+
+    test_db = get_settings().test_db
+    success, err_msg = check_test_db_accessible(test_db)
+    if not success:
+        if os.getenv("CI") or os.getenv("BANKFLOW_REQUIRE_INTEGRATION_TESTS"):
+            pytest.fail(f"Required test database '{test_db.name}' is unreachable: {err_msg}")
+        pytest.skip(f"Dedicated test database '{test_db.name}' is not accessible: {err_msg}")
+
+    test_db.assert_safe_for_reset()
+    collision_batch_id = f"test_collision_{uuid.uuid4().hex[:8]}"
+
+    with get_connection(test_db) as conn:
+        init_staging_schema(conn)
+        loader = StagingLoader(conn)
+
+        # 1. Initial ingestion succeeds
+        first_result = loader.ingest_dataset_directory(clean_dataset_dir, batch_id=collision_batch_id)
+        assert first_result["status"] == BATCH_STATUS_SUCCEEDED
+        original_extracted = first_result["records_extracted"]
+        original_staged = first_result["records_staged"]
+
+        # 2. Attempt second ingestion with the identical batch_id
+        second_result = loader.ingest_dataset_directory(clean_dataset_dir, batch_id=collision_batch_id)
+        assert second_result["status"] == BATCH_STATUS_FAILED
+        assert second_result["error_code"] == RULE_BATCH_ALREADY_EXISTS
+        assert "already exists" in second_result["error_message"]
+
+        # 3. Verify original batch run record in monitoring table is intact and NOT mutated to FAILED
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT status, records_extracted, records_staged, error_summary
+                FROM monitoring.etl_batch_runs
+                WHERE batch_id = %s;
+            """, (collision_batch_id,))
+            row = cur.fetchone()
+            assert row is not None
+            assert row[0] == BATCH_STATUS_SUCCEEDED  # Crucial: NOT overwritten or corrupted
+            assert row[1] == original_extracted
+            assert row[2] == original_staged
+            assert row[3] is None  # No error summary on original successful run
+
+            # 4. Verify staged rows count in staging.stg_transactions is unchanged (no duplicate insertions)
+            cur.execute("""
+                SELECT count(*)
+                FROM staging.stg_transactions
+                WHERE batch_id = %s;
+            """, (collision_batch_id,))
+            txn_count = cur.fetchone()[0]
+            assert txn_count == 50
+
+    # 5. Verify CLI caller receives a useful error and exit code 1
+    runner = CliRunner()
+    cli_res = runner.invoke(
+        cli,
+        [
+            "stage",
+            "--input-dir", str(clean_dataset_dir),
+            "--batch-id", collision_batch_id,
+            "--test-db",
+        ],
+    )
+    assert cli_res.exit_code != 0
+    assert "BATCH_ALREADY_EXISTS" in cli_res.output
+    assert f"Batch with ID '{collision_batch_id}' already exists" in cli_res.output

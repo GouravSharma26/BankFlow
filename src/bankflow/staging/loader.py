@@ -25,6 +25,7 @@ from bankflow.constants import (
     BRANCHES_COLUMNS,
     CUSTOMERS_COLUMNS,
     ENTITY_SCHEMAS,
+    RULE_BATCH_ALREADY_EXISTS,
     RULE_FILE_EMPTY,
     RULE_FILE_HEADER_MISMATCH,
     RULE_FILE_REQUIRED_COLUMN_MISSING,
@@ -59,10 +60,17 @@ class StagingLoader:
             batch_id, source_name, started_at, status, records_extracted, records_staged
         ) VALUES (%s, %s, %s, %s, 0, 0);
         """
-        with self.conn.cursor() as cur:
-            cur.execute(query, (batch_id, source_name, now, BATCH_STATUS_RUNNING))
-        self.conn.commit()
-        return batch_id
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(query, (batch_id, source_name, now, BATCH_STATUS_RUNNING))
+            self.conn.commit()
+            return batch_id
+        except psycopg2.IntegrityError:
+            self.conn.rollback()
+            raise StagingError(
+                RULE_BATCH_ALREADY_EXISTS,
+                f"Batch with ID '{batch_id}' already exists. Reusing batch IDs is prohibited to protect idempotency.",
+            )
 
     def update_batch_failure(
         self,
@@ -118,8 +126,13 @@ class StagingLoader:
         """
         Verify that file exists, is valid UTF-8, headers strictly match expected columns,
         and contains non-empty data rows.
-        Returns (headers, data_row_count).
-        Raises StagingError on violation.
+        Enforces exact header contract:
+        - No illegal leading or trailing whitespace in headers
+        - No duplicate columns
+        - No missing required columns
+        - No unexpected extra columns
+        - Exact documented column ordering
+        - Non-empty dataset (0-byte files or headers-only files raise RULE_FILE_EMPTY)
         """
         if not file_path.exists():
             raise StagingError(RULE_FILE_UNREADABLE, f"File does not exist: {file_path}")
@@ -130,20 +143,28 @@ class StagingLoader:
                 try:
                     header_row = next(reader)
                 except StopIteration:
-                    raise StagingError(RULE_FILE_EMPTY, f"File is empty (no headers): {file_path.name}")
+                    raise StagingError(RULE_FILE_EMPTY, f"File is empty (0 bytes): {file_path.name}")
 
-                cleaned_headers = [col.strip() for col in header_row if col is not None]
-                if not cleaned_headers:
+                if not header_row or all(col is None or col == "" for col in header_row):
                     raise StagingError(RULE_FILE_EMPTY, f"File contains empty header row: {file_path.name}")
 
-                # Check for duplicate headers
+                # 1. Reject headers with leading or trailing whitespace
+                if any(col != col.strip() for col in header_row if col is not None):
+                    raise StagingError(
+                        RULE_FILE_HEADER_MISMATCH,
+                        f"Header row in {file_path.name} contains illegal whitespace: {header_row}",
+                    )
+
+                cleaned_headers = [col.strip() for col in header_row if col is not None]
+
+                # 2. Reject duplicate headers
                 if len(cleaned_headers) != len(set(cleaned_headers)):
                     raise StagingError(
                         RULE_FILE_HEADER_MISMATCH,
                         f"Duplicate columns in header row for {file_path.name}: {cleaned_headers}",
                     )
 
-                # Verify all expected columns are present
+                # 3. Reject missing required columns
                 missing_cols = [col for col in expected_columns if col not in cleaned_headers]
                 if missing_cols:
                     raise StagingError(
@@ -151,7 +172,7 @@ class StagingLoader:
                         f"Missing required columns in {file_path.name}: {missing_cols}. Found: {cleaned_headers}",
                     )
 
-                # Verify no unexpected extra columns
+                # 4. Reject unexpected extra columns
                 unexpected_cols = [col for col in cleaned_headers if col not in expected_columns]
                 if unexpected_cols:
                     raise StagingError(
@@ -159,7 +180,15 @@ class StagingLoader:
                         f"Unexpected columns in {file_path.name}: {unexpected_cols}. Expected: {expected_columns}",
                     )
 
-                # Count rows and enforce non-empty dataset contract
+                # 5. Enforce exact documented column ordering
+                if cleaned_headers != expected_columns:
+                    raise StagingError(
+                        RULE_FILE_HEADER_MISMATCH,
+                        f"Header column ordering mismatch in {file_path.name}. "
+                        f"Documented contract requires exact order: {expected_columns}. Found: {cleaned_headers}",
+                    )
+
+                # 6. Count rows and enforce non-empty dataset contract
                 data_rows = sum(1 for _ in reader)
                 if data_rows == 0:
                     raise StagingError(
@@ -179,8 +208,11 @@ class StagingLoader:
         rows_to_insert = []
 
         with open(file_path, mode="r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            for row_num, row in enumerate(reader, start=1):
+            reader = csv.reader(f)
+            _ = next(reader)  # Skip validated header
+            dict_reader = csv.DictReader(f, fieldnames=BRANCHES_COLUMNS)
+            for row_num, raw_row in enumerate(dict_reader, start=1):
+                row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k is not None}
                 payload_json = json.dumps(row)
                 rows_to_insert.append((
                     row.get("branch_id"),
@@ -210,8 +242,11 @@ class StagingLoader:
         rows_to_insert = []
 
         with open(file_path, mode="r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            for row_num, row in enumerate(reader, start=1):
+            reader = csv.reader(f)
+            _ = next(reader)  # Skip validated header
+            dict_reader = csv.DictReader(f, fieldnames=CUSTOMERS_COLUMNS)
+            for row_num, raw_row in enumerate(dict_reader, start=1):
+                row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k is not None}
                 payload_json = json.dumps(row)
                 rows_to_insert.append((
                     row.get("customer_id"),
@@ -243,8 +278,11 @@ class StagingLoader:
         rows_to_insert = []
 
         with open(file_path, mode="r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            for row_num, row in enumerate(reader, start=1):
+            reader = csv.reader(f)
+            _ = next(reader)  # Skip validated header
+            dict_reader = csv.DictReader(f, fieldnames=ACCOUNTS_COLUMNS)
+            for row_num, raw_row in enumerate(dict_reader, start=1):
+                row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k is not None}
                 payload_json = json.dumps(row)
                 rows_to_insert.append((
                     row.get("account_id"),
@@ -279,8 +317,11 @@ class StagingLoader:
         rows_to_insert = []
 
         with open(file_path, mode="r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            for row_num, row in enumerate(reader, start=1):
+            reader = csv.reader(f)
+            _ = next(reader)  # Skip validated header
+            dict_reader = csv.DictReader(f, fieldnames=TRANSACTIONS_COLUMNS)
+            for row_num, raw_row in enumerate(dict_reader, start=1):
+                row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k is not None}
                 payload_json = json.dumps(row)
                 rows_to_insert.append((
                     row.get("transaction_id"),
@@ -319,7 +360,21 @@ class StagingLoader:
         Registers the batch, validates each file, ingests into staging, and records outcome.
         """
         # Always register the batch in monitoring, whether batch_id is auto-generated or explicitly provided
-        batch_id = self.register_batch(source_name=str(data_dir), batch_id=batch_id)
+        try:
+            batch_id = self.register_batch(source_name=str(data_dir), batch_id=batch_id)
+        except StagingError as err:
+            if err.rule_code == RULE_BATCH_ALREADY_EXISTS:
+                # Do NOT touch or overwrite the existing batch run record or staged data!
+                return {
+                    "batch_id": batch_id or "",
+                    "status": BATCH_STATUS_FAILED,
+                    "error_code": err.rule_code,
+                    "error_message": err.message,
+                    "records_extracted": 0,
+                    "records_staged": 0,
+                    "entity_counts": {},
+                }
+            raise
 
         total_extracted = 0
         total_staged = 0

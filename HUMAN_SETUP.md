@@ -4,7 +4,7 @@
 
 ## 1. Current repository state
 
-BankFlow is at the planning stage. `plan.md` and the supporting Markdown files define the scope and implementation process; they do not mean code or database setup has already been completed.
+Phase 1 (Python foundation, synthetic data generator, Docker Compose PostgreSQL 17 environment, staging schema, and batch ingestion) is implemented and verified. Future phases (Phase 2 validation engine, Phase 3 dimensional warehouse, Phase 4 analytics, Phase 5 BI dashboard) are planned and under active development.
 
 GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 

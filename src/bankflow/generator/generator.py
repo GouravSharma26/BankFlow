@@ -157,9 +157,11 @@ class SyntheticDataGenerator:
             raise ValueError("Cannot generate transactions without accounts.")
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        if end_dt < start_dt:
+        end_day = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if end_day < start_dt:
             raise ValueError(f"Transaction end_date ({end_date}) cannot be before start_date ({start_date})")
+        # Define end date as inclusive across the complete calendar day in UTC (through 23:59:59)
+        end_dt = end_day + timedelta(days=1) - timedelta(seconds=1)
         total_seconds = int((end_dt - start_dt).total_seconds())
 
         types = [TYPE_DEPOSIT, TYPE_WITHDRAWAL, TYPE_TRANSFER, TYPE_PAYMENT, TYPE_FEE]
@@ -236,11 +238,12 @@ class SyntheticDataGenerator:
                 txns[idx]["transaction_id"] = ""
                 idx += 1
 
-        # 2. Duplicate event ID (works even if idx == 0)
+        # 2. Duplicate event ID (duplicate of a valid, non-empty transaction ID not modified by another defect)
         for _ in range(dc.duplicate_txn_id_count):
             if idx < len(txns) and len(txns) > 1:
-                source_idx = 0 if idx > 0 else 1
-                txns[idx]["transaction_id"] = txns[source_idx]["transaction_id"]
+                # Pick a valid, non-empty source ID from the end of the dataset that is not modified by earlier defects
+                source_id = txns[-1]["transaction_id"]
+                txns[idx]["transaction_id"] = source_id
                 idx += 1
 
         # 3. Missing account ID
