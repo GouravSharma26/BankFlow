@@ -1,0 +1,3 @@
+"""
+BankFlow test suite.
+"""

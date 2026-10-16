@@ -4,7 +4,7 @@
 
 ## 1. Current repository state
 
-BankFlow is at the planning stage. `plan.md` and the supporting Markdown files define the scope and implementation process; they do not mean code or database setup has already been completed.
+Phase 1 (Python foundation, synthetic data generator, Docker Compose PostgreSQL 17 environment, staging schema, and batch ingestion) is implemented and verified. Future phases (Phase 2 validation engine, Phase 3 dimensional warehouse, Phase 4 analytics, Phase 5 BI dashboard) are planned and under active development.
 
 GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 
@@ -56,11 +56,52 @@ On Windows, create a virtual environment using the Python launcher or the instal
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
 ```
 
 If PowerShell blocks virtual-environment activation, use an allowed terminal configuration or invoke the virtual environment's Python directly. Do not weaken machine-wide execution policies just to run this project.
 
-The final dependency-installation command will be added after `pyproject.toml` is implemented.
+### Verified execution commands:
+
+1. **Configure environment (.env):**
+   ```powershell
+   # If you do not already have a .env file:
+   Copy-Item .env.example .env
+   ```
+   *Important:* Create `.env` and set the intended host port **before** starting Docker Compose.
+   If host port 5432 is already occupied by a local Windows PostgreSQL service, set `BANKFLOW_DB_PORT=5433` in your `.env`.
+   If you already have a working `.env`, do not overwrite it.
+
+2. **Start PostgreSQL with Docker Compose (Recommended):**
+   ```powershell
+   docker compose up -d
+   ```
+   *Note:* Starts PostgreSQL 17 on loopback `127.0.0.1:${BANKFLOW_DB_PORT:-5432}` and automatically creates both `bankflow` and `bankflow_test` databases via `docker/01-init-test-db.sql` upon initial volume creation.
+
+   > [!CAUTION]
+   > Do **not** run `docker compose down -v` to troubleshoot ordinary connection issues. The `-v` flag removes the persistent volume (`bankflow_postgres_data`) and deletes your local databases.
+   >
+   > The initialization script `docker/01-init-test-db.sql` runs only when PostgreSQL initializes a brand-new data directory. If you change credentials after the volume exists, updating `.env` alone will not alter the existing database user's password.
+
+3. **Run tests:**
+   ```powershell
+   python -m pytest tests -v
+   ```
+
+4. **Generate synthetic data:**
+   ```powershell
+   bankflow generate --output-dir data/samples --seed 42 --transactions 100
+   ```
+
+5. **Initialize PostgreSQL database:**
+   ```powershell
+   bankflow init-db
+   ```
+
+6. **Ingest dataset into staging:**
+   ```powershell
+   bankflow stage --input-dir data/samples
+   ```
 
 ## 6. PostgreSQL safety checklist
 

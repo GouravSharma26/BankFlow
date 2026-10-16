@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: bankflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${BANKFLOW_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${BANKFLOW_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${BANKFLOW_DB_NAME:-bankflow}
+    ports:
+      # Restrict to localhost loopback for security. If 5432 is in use by a local Windows service,
+      # set BANKFLOW_DB_PORT=5433 in .env to map to 5433 on your host.
+      - "127.0.0.1:${BANKFLOW_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/01-init-test-db.sql:/docker-entrypoint-initdb.d/01-init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BANKFLOW_DB_USER:-postgres} -d ${BANKFLOW_DB_NAME:-bankflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    name: bankflow_postgres_data
