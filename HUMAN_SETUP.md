@@ -63,28 +63,35 @@ If PowerShell blocks virtual-environment activation, use an allowed terminal con
 
 ### Verified execution commands:
 
-1. **Copy configuration:**
+1. **Start PostgreSQL with Docker Compose (Recommended):**
+   ```powershell
+   docker compose up -d
+   ```
+   *Note:* Automatically starts PostgreSQL 17 and creates both `bankflow` and `bankflow_test` databases.
+   If port 5432 is already occupied by a local Windows service, either stop the service or set `BANKFLOW_DB_PORT=5433` in your `.env`.
+
+2. **Copy configuration:**
    ```powershell
    Copy-Item .env.example .env
-   # Edit .env with your local PostgreSQL password
+   # Default settings in .env match the docker-compose service
    ```
 
-2. **Run tests:**
+3. **Run tests:**
    ```powershell
    python -m pytest tests -v
    ```
 
-3. **Generate synthetic data:**
+4. **Generate synthetic data:**
    ```powershell
    bankflow generate --output-dir data/samples --seed 42 --transactions 100
    ```
 
-4. **Initialize PostgreSQL database:**
+5. **Initialize PostgreSQL database:**
    ```powershell
    bankflow init-db
    ```
 
-5. **Ingest dataset into staging:**
+6. **Ingest dataset into staging:**
    ```powershell
    bankflow stage --input-dir data/samples
    ```

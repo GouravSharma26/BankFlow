@@ -81,18 +81,24 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - Implemented `src/bankflow/staging/loader.py` validating file headers, registering batch runs, capturing source file, row number, batch ID, ingestion timestamp, and raw payload.
   - Implemented `src/bankflow/__main__.py` with CLI commands: `init-db`, `test-connection`, `generate`, `stage`, `batch-status`.
   - Created automated test suite: 14 unit tests passed covering config guards, deterministic generation, defect injection, CSV export, and file header validation; 1 integration test configured for PostgreSQL test DB.
-  - Updated `docs/design_decisions.md` (TD-008 accepted psycopg2-binary), `docs/data_dictionary.md` (populated staging/monitoring schemas), and `HUMAN_SETUP.md` (verified execution commands).
+  - Added `docker-compose.yml` and `docker/01-init-test-db.sql` providing one-command local PostgreSQL 17 setup with both `bankflow` and `bankflow_test` databases.
+  - Updated `docs/design_decisions.md` (TD-008 accepted psycopg2-binary, TD-010 accepted Docker Compose), `docs/data_dictionary.md` (populated staging/monitoring schemas), and `HUMAN_SETUP.md` (verified execution and docker compose commands).
   - Cleaned minor Phase 0 trailing whitespace in `plan.md`.
 - Tests/commands executed:
-  - `python -m pytest tests -v` (14 passed, 1 skipped test-db integration)
+  - `docker compose up -d` (PostgreSQL 17 container started and healthy)
+  - `python -m pytest tests -v` (15 passed, 0 skipped, 0 failed with live PostgreSQL container)
   - `pip install -e .` (installed bankflow 0.1.0)
   - `bankflow --help` (verified CLI options)
   - `bankflow generate --output-dir data/samples --seed 42 --transactions 100` (generated 4 clean CSV files)
+  - `bankflow test-connection; bankflow test-connection --test-db` (verified connectivity to primary and test DBs)
+  - `bankflow init-db` (initialized staging and monitoring schemas)
+  - `bankflow stage --input-dir data/samples` (ingested 170 records into staging tables)
+  - `bankflow batch-status <batch_id>` (verified batch state and record count audit)
   - `git diff --check` (clean, 0 whitespace errors)
-- Test outcomes: 14 passed, 1 skipped (requires local PostgreSQL test database credentials in .env), 0 failed.
-- Acceptance evidence: Developer can generate synthetic datasets, inspect CSV output, initialize staging schema, and run tests from clean setup.
+- Test outcomes: 15 passed, 0 skipped, 0 failed.
+- Acceptance evidence: Developer can launch local PostgreSQL with `docker compose up -d`, generate synthetic datasets, initialize staging schema, ingest staging data, inspect batch records, and run all 15 automated tests.
 - Review findings: None.
-- Fixes or accepted risks: Replaced CLI unicode symbols with ASCII tags (`[OK]`, `[ERROR]`) for Windows console compatibility.
+- Fixes or accepted risks: Replaced CLI unicode symbols with ASCII tags (`[OK]`, `[ERROR]`) for Windows console compatibility. Configured port mapping in `docker-compose.yml` (`${BANKFLOW_DB_PORT:-5432}:5432`) to accommodate existing host services.
 - Known limitations: Dimensional warehouse loading and Phase 2 validation system are intentionally deferred to Phase 2 and Phase 3.
 - Next action: Submit Phase 1 for review; next phase is Phase 2 — Validation, Quarantine, and Data Contracts.
 
