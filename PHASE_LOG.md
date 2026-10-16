@@ -277,9 +277,9 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED LOCALLY — EXTERNAL REVIEW APPROVAL PENDING
 - Date: 2026-10-16
 - Branch: phase/2-validation-quarantine
-- Commit SHA: 5e94dfc (Implementation) / c62729b (Phase log update)
+- Commit SHA: 5e94dfc (Implementation) / d51e4e3 (Documentation)
 - GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/2-validation-quarantine>
-- Push status: Pending push
+- Push status: Pushed to origin/phase/2-validation-quarantine
 - Objective: Resolve the two remaining Phase 2 review findings without rebuilding working components or starting Phase 3:
   1. Finding 1: Prevent ambiguous current-batch IDs from being restored by historical references. Retain the set of duplicate branch IDs, customer IDs, and account IDs detected in the current batch and exclude them when constructing trusted reference sets from previously validated batches. Ensure duplicate accounts cannot be restored into `valid_accounts`, causing referencing transactions to be rejected under `ACCOUNT_NOT_FOUND`. Apply consistent logic to branches and customers while preserving unrelated valid historical entities.
   2. Finding 2: Enforce strict YYYY-MM-DD calendar-date formatting with a reusable strict date parser. Require exact `YYYY-MM-DD` syntax and calendar validation, never supply a default/fallback date, and return a consistent validation outcome using `RULE_DATE_PARSE_ERROR` ("DATE_PARSE_ERROR"). Use it for customer `created_date` and account `opened_date`.
