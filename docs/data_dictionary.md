@@ -26,7 +26,7 @@ The master `plan.md` describes the intended core tables. The list below is the d
 - `staging.stg_customers`
 - `staging.stg_branches`
 
-Purpose: retain source values and ingestion lineage, including values that may fail validation. Exact type choices must preserve malformed raw values sufficiently to produce explainable rejection reasons.
+Purpose: retain source values and ingestion lineage, including values that may fail validation. Exact string representations (including leading/trailing whitespace) are preserved in all columns and in `raw_payload`. Any surplus fields present in a data row beyond declared columns are preserved in `raw_payload` under the key `_surplus` as an array of strings. Normalization and defect detection are handled by subsequent validation layers.
 
 ### Monitoring
 

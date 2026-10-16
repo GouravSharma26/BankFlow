@@ -129,6 +129,12 @@ For every ingested row, preserve where possible:
 
 Malformed row-level data must not disappear simply because casting failed. File-level failures should be represented as a failed batch with a reason, rather than fabricated as a successful empty batch.
 
+### Raw Staging Preservation and Surplus Fields Policy
+
+1. **Exact Raw Value Preservation:** All source field values must be stored in staging columns and `raw_payload` (JSONB) exactly as read from the CSV file. Ingestion methods must never trim leading/trailing whitespace, normalize empty values, or alter case.
+2. **Surplus Fields Representation:** If a CSV data row contains more fields than the declared header schema, the extra fields must not be discarded. They are preserved in `raw_payload` under the reserved key `_surplus` as an array of strings (e.g., `{"_surplus": ["extra_field_1", "extra_field_2"]}`).
+3. **Layer Separation:** Field-level whitespace trimming, canonicalization, type casting, and defect classification belong strictly to the validation and transformation layer (Phase 2 onwards); they must never be mixed into raw staging ingestion.
+
 ## 7. Warehouse Identity Rules
 
 - Define transaction event identity before implementation; default assumption is an immutable event ID unique within `source_system`.

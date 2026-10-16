@@ -259,3 +259,129 @@ def test_batch_id_collision_preserves_original_state(clean_dataset_dir: Path):
     assert cli_res.exit_code != 0
     assert "BATCH_ALREADY_EXISTS" in cli_res.output
     assert f"Batch with ID '{collision_batch_id}' already exists" in cli_res.output
+
+
+@pytest.mark.integration
+def test_raw_staging_preservation_and_surplus_fields(tmp_path: Path):
+    """
+    Verify that raw staging preserves source field values without trimming whitespace
+    and preserves surplus CSV fields in raw_payload under '_surplus'.
+    Tests:
+    - A transaction ID with surrounding whitespace (e.g. '  TXN-SPACE-99  ')
+    - An amount with surrounding whitespace (e.g. '  450.75  ')
+    - A row with more values than the declared header (surplus values)
+    - Assertions that the source representation is preserved and no values disappear silently.
+    """
+    test_db = get_settings().test_db
+    success, err_msg = check_test_db_accessible(test_db)
+    if not success:
+        if os.getenv("CI") or os.getenv("BANKFLOW_REQUIRE_INTEGRATION_TESTS"):
+            pytest.fail(f"Required test database '{test_db.name}' is unreachable: {err_msg}")
+        pytest.skip(f"Dedicated test database '{test_db.name}' is not accessible: {err_msg}")
+
+    test_db.assert_safe_for_reset()
+    dataset_dir = tmp_path / "raw_preservation_dataset"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    # Valid branches with whitespace
+    (dataset_dir / "branches.csv").write_text(
+        "branch_id,branch_name,region\n"
+        "  BR-SPACE-01  ,  Downtown Branch  ,  NORTH  \n",
+        encoding="utf-8",
+    )
+    # Valid customers with whitespace
+    (dataset_dir / "customers.csv").write_text(
+        "customer_id,customer_segment,created_date,customer_status\n"
+        "  CUST-SPACE-01  ,  RETAIL  ,  2026-01-01  ,  ACTIVE  \n",
+        encoding="utf-8",
+    )
+    # Valid accounts with whitespace
+    (dataset_dir / "accounts.csv").write_text(
+        "account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\n"
+        "  ACC-SPACE-01  ,  CUST-SPACE-01  ,  BR-SPACE-01  ,CHECKING,OPEN,2026-01-01,USD\n",
+        encoding="utf-8",
+    )
+    # Transactions with:
+    # Row 1: transaction_id with surrounding whitespace and amount with surrounding whitespace
+    # Row 2: surplus fields (more values than header)
+    # Row 3: combined whitespace and surplus fields
+    (dataset_dir / "transactions.csv").write_text(
+        "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+        "  TXN-SPACE-99  ,ACC-01,DEPOSIT,  450.75  ,USD,2026-01-01T00:00:00+00:00,COMPLETED,ONLINE,,CORE\n"
+        "TXN-SURPLUS-100,ACC-01,WITHDRAWAL,50.00,USD,2026-01-01T01:00:00+00:00,COMPLETED,ATM,,CORE,SURPLUS_VAL_ALPHA,SURPLUS_VAL_BETA\n"
+        "  TXN-BOTH-101  ,ACC-01,TRANSFER,  1000.00  ,USD,2026-01-01T02:00:00+00:00,COMPLETED,BRANCH,,CORE,  SURPLUS_WITH_SPACES  \n",
+        encoding="utf-8",
+    )
+
+    batch_id = f"test_raw_preserve_{uuid.uuid4().hex[:8]}"
+
+    with get_connection(test_db) as conn:
+        init_staging_schema(conn)
+        loader = StagingLoader(conn)
+        result = loader.ingest_dataset_directory(dataset_dir, batch_id=batch_id)
+
+        assert result["status"] == BATCH_STATUS_SUCCEEDED
+        assert result["records_staged"] == 6  # 1 branch + 1 customer + 1 account + 3 transactions = 6
+
+        with conn.cursor() as cur:
+            # Check branches: preserved whitespace in staging columns and raw_payload
+            cur.execute("""
+                SELECT branch_id, branch_name, region, raw_payload
+                FROM staging.stg_branches
+                WHERE batch_id = %s;
+            """, (batch_id,))
+            br_row = cur.fetchone()
+            assert br_row is not None
+            assert br_row[0] == "  BR-SPACE-01  "
+            assert br_row[1] == "  Downtown Branch  "
+            assert br_row[2] == "  NORTH  "
+            assert br_row[3]["branch_id"] == "  BR-SPACE-01  "
+
+            # Check customers: preserved whitespace
+            cur.execute("""
+                SELECT customer_id, customer_segment, created_date_raw, raw_payload
+                FROM staging.stg_customers
+                WHERE batch_id = %s;
+            """, (batch_id,))
+            cust_row = cur.fetchone()
+            assert cust_row is not None
+            assert cust_row[0] == "  CUST-SPACE-01  "
+            assert cust_row[1] == "  RETAIL  "
+            assert cust_row[2] == "  2026-01-01  "
+            assert cust_row[3]["customer_id"] == "  CUST-SPACE-01  "
+
+            # Check transactions:
+            cur.execute("""
+                SELECT source_row_number, transaction_id, amount_raw, raw_payload
+                FROM staging.stg_transactions
+                WHERE batch_id = %s
+                ORDER BY source_row_number;
+            """, (batch_id,))
+            tx_rows = cur.fetchall()
+            assert len(tx_rows) == 3
+
+            # Row 1: whitespace preserved without trimming
+            r1_num, r1_txid, r1_amt, r1_payload = tx_rows[0]
+            assert r1_num == 1
+            assert r1_txid == "  TXN-SPACE-99  "
+            assert r1_amt == "  450.75  "
+            assert r1_payload["transaction_id"] == "  TXN-SPACE-99  "
+            assert r1_payload["amount"] == "  450.75  "
+            assert "_surplus" not in r1_payload
+
+            # Row 2: surplus values preserved under _surplus
+            r2_num, r2_txid, r2_amt, r2_payload = tx_rows[1]
+            assert r2_num == 2
+            assert r2_txid == "TXN-SURPLUS-100"
+            assert r2_amt == "50.00"
+            assert r2_payload["transaction_id"] == "TXN-SURPLUS-100"
+            assert r2_payload["_surplus"] == ["SURPLUS_VAL_ALPHA", "SURPLUS_VAL_BETA"]
+
+            # Row 3: combined whitespace and surplus preserved
+            r3_num, r3_txid, r3_amt, r3_payload = tx_rows[2]
+            assert r3_num == 3
+            assert r3_txid == "  TXN-BOTH-101  "
+            assert r3_amt == "  1000.00  "
+            assert r3_payload["transaction_id"] == "  TXN-BOTH-101  "
+            assert r3_payload["amount"] == "  1000.00  "
+            assert r3_payload["_surplus"] == ["  SURPLUS_WITH_SPACES  "]

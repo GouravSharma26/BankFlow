@@ -210,9 +210,13 @@ class StagingLoader:
         with open(file_path, mode="r", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
             _ = next(reader)  # Skip validated header
-            dict_reader = csv.DictReader(f, fieldnames=BRANCHES_COLUMNS)
+            dict_reader = csv.DictReader(f, fieldnames=BRANCHES_COLUMNS, restkey="_surplus")
             for row_num, raw_row in enumerate(dict_reader, start=1):
-                row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k is not None}
+                # Preserve raw source strings without stripping or normalizing
+                row = {col: raw_row.get(col) for col in BRANCHES_COLUMNS}
+                surplus = raw_row.get("_surplus") or raw_row.get(None)
+                if surplus:
+                    row["_surplus"] = surplus
                 payload_json = json.dumps(row)
                 rows_to_insert.append((
                     row.get("branch_id"),
@@ -244,9 +248,13 @@ class StagingLoader:
         with open(file_path, mode="r", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
             _ = next(reader)  # Skip validated header
-            dict_reader = csv.DictReader(f, fieldnames=CUSTOMERS_COLUMNS)
+            dict_reader = csv.DictReader(f, fieldnames=CUSTOMERS_COLUMNS, restkey="_surplus")
             for row_num, raw_row in enumerate(dict_reader, start=1):
-                row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k is not None}
+                # Preserve raw source strings without stripping or normalizing
+                row = {col: raw_row.get(col) for col in CUSTOMERS_COLUMNS}
+                surplus = raw_row.get("_surplus") or raw_row.get(None)
+                if surplus:
+                    row["_surplus"] = surplus
                 payload_json = json.dumps(row)
                 rows_to_insert.append((
                     row.get("customer_id"),
@@ -280,9 +288,13 @@ class StagingLoader:
         with open(file_path, mode="r", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
             _ = next(reader)  # Skip validated header
-            dict_reader = csv.DictReader(f, fieldnames=ACCOUNTS_COLUMNS)
+            dict_reader = csv.DictReader(f, fieldnames=ACCOUNTS_COLUMNS, restkey="_surplus")
             for row_num, raw_row in enumerate(dict_reader, start=1):
-                row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k is not None}
+                # Preserve raw source strings without stripping or normalizing
+                row = {col: raw_row.get(col) for col in ACCOUNTS_COLUMNS}
+                surplus = raw_row.get("_surplus") or raw_row.get(None)
+                if surplus:
+                    row["_surplus"] = surplus
                 payload_json = json.dumps(row)
                 rows_to_insert.append((
                     row.get("account_id"),
@@ -319,9 +331,13 @@ class StagingLoader:
         with open(file_path, mode="r", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
             _ = next(reader)  # Skip validated header
-            dict_reader = csv.DictReader(f, fieldnames=TRANSACTIONS_COLUMNS)
+            dict_reader = csv.DictReader(f, fieldnames=TRANSACTIONS_COLUMNS, restkey="_surplus")
             for row_num, raw_row in enumerate(dict_reader, start=1):
-                row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k is not None}
+                # Preserve raw source strings without stripping or normalizing
+                row = {col: raw_row.get(col) for col in TRANSACTIONS_COLUMNS}
+                surplus = raw_row.get("_surplus") or raw_row.get(None)
+                if surplus:
+                    row["_surplus"] = surplus
                 payload_json = json.dumps(row)
                 rows_to_insert.append((
                     row.get("transaction_id"),

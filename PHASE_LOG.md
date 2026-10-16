@@ -9,7 +9,7 @@
 - Last verified implementation phase: `Phase 1 — Python Foundation, Synthetic Generator, and Staging`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 - Baseline commit: `b863ee1`
-- Last reviewed commit: `67db1fd`
+- Last reviewed commit: `4f63c0d`
 
 ## How to Maintain This File
 
@@ -145,6 +145,36 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Test outcomes: 28 passed, 0 skipped, 0 failed.
 - Acceptance evidence: All 6 review requirements verified with regression tests; integration tests executed against PostgreSQL container on 127.0.0.1:5433; git diff clean with no secrets or extraneous files.
 - Review findings: All remaining findings from commit `67db1fd` resolved.
+- Fixes or accepted risks: None.
+- Known limitations: Phase 2 validation and quarantine engine, Phase 3 dimensional warehouse, Phase 4 analytics, and Phase 5 dashboard are planned future phases.
+- Next action: Submit Phase 1 review fixes for final review.
+
+### Phase 1 — Review Fix (Raw Staging Preservation and Surplus Fields)
+
+- Status: VERIFIED
+- Date: 2026-10-16
+- Branch: phase/1-foundation
+- Commit SHA: Pending commit
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/1-foundation>
+- Push status: Ready to push to origin/phase/1-foundation
+- Objective: Fix raw staging-data preservation and surplus fields handling:
+  1. In `src/bankflow/staging/loader.py`, ensure ingestion methods for branches, customers, accounts, and transactions preserve original source field values in staging without trimming leading/trailing whitespace or otherwise normalizing them.
+  2. Preserve original row representation in `raw_payload`, including leading/trailing whitespace and any surplus CSV fields beyond the declared header schema under `raw_payload['_surplus']`.
+  3. Keep source-field normalization and defect detection in the validation layer; do not mix it into raw ingestion.
+  4. Retain strict header validation.
+  5. Add PostgreSQL integration test `test_raw_staging_preservation_and_surplus_fields` inspecting persisted values (transaction ID with whitespace, amount with whitespace, row with surplus values, ensuring no values disappear silently).
+  6. Update data contract and data dictionary to document raw staging preservation and surplus field policy.
+- Changes delivered:
+  - `src/bankflow/staging/loader.py`: Removed whitespace `.strip()` in `ingest_branches`, `ingest_customers`, `ingest_accounts`, and `ingest_transactions`; configured `csv.DictReader(..., restkey="_surplus")` and preserved surplus fields under `_surplus` in `raw_payload`.
+  - `tests/test_db_integration.py`: Added `test_raw_staging_preservation_and_surplus_fields` verifying PostgreSQL staging columns and JSONB `raw_payload` retain whitespace and surplus values.
+  - `docs/data_contract.md`: Documented Raw Staging Preservation and Surplus Fields Policy in Section 6.
+  - `docs/data_dictionary.md`: Documented exact string preservation and `_surplus` array in `raw_payload` under Staging section.
+- Tests/commands executed:
+  - `python -m pytest tests -v` (29 passed, 0 skipped, 0 failed in 23s against live `bankflow_test` PostgreSQL instance)
+  - `git diff --check`
+- Test outcomes: 29 passed, 0 skipped, 0 failed.
+- Acceptance evidence: Staging integration test proves whitespace in transaction IDs and amounts is preserved in PostgreSQL staging tables, surplus fields are captured under `_surplus` in `raw_payload`, and no values disappear.
+- Review findings: Resolved source preservation and surplus field finding from commit `4f63c0d`.
 - Fixes or accepted risks: None.
 - Known limitations: Phase 2 validation and quarantine engine, Phase 3 dimensional warehouse, Phase 4 analytics, and Phase 5 dashboard are planned future phases.
 - Next action: Submit Phase 1 review fixes for final review.
