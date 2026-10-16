@@ -6,21 +6,21 @@
 
 | ID | Topic | Current choice | Status | Reason / guardrail |
 |---|---|---|---|---|
-| TD-001 | Primary language | Python 3.12+ | Planned | Familiar ecosystem for ETL and testability; choose an actually supported version after dependency/environment check. |
-| TD-002 | Warehouse database | PostgreSQL | Planned | Relational constraints, transactions, views, and query analysis are central to the learning goal. |
-| TD-003 | Input format | CSV | Planned | Easy to inspect, generate, version as small fixtures, and explain in a demo. |
-| TD-004 | Monetary representation | Python `Decimal` + PostgreSQL `NUMERIC` | Required design rule | Avoid binary floating-point rounding in monetary calculations. |
-| TD-005 | Testing | pytest | Planned | Allows unit, database integration, and end-to-end verification. |
+| TD-001 | Primary language | Python 3.12+ | Accepted | Standard ecosystem for ETL and testability; running Python 3.12.6. |
+| TD-002 | Warehouse database | PostgreSQL | Accepted | Relational constraints, transactions, views, and query analysis are central to the learning goal. |
+| TD-003 | Input format | CSV | Accepted | Easy to inspect, generate, version as small fixtures, and explain in a demo. |
+| TD-004 | Monetary representation | Python `Decimal` + PostgreSQL `NUMERIC` | Accepted | Avoid binary floating-point rounding in monetary calculations. |
+| TD-005 | Testing | pytest | Accepted | Allows unit, database integration, and end-to-end verification. |
 | TD-006 | CI | GitHub Actions | Planned | Makes tests visible and repeatable on code changes. |
 | TD-007 | Dashboard | Choose Power BI or Metabase | Open | Decide once based on environment/access; do not build both in MVP. |
-| TD-008 | Python DB access | Choose SQLAlchemy or psycopg | Open | Pick one primary approach after deciding how migrations/schema initialization will be handled. |
-| TD-009 | Orchestration | Manual CLI first | Planned | Prove correctness before introducing scheduler complexity. |
+| TD-008 | Python DB access | psycopg2-binary | Accepted | Direct, high-performance SQL execution and batch staging with zero ORM overhead. |
+| TD-009 | Orchestration | Manual CLI first (Click) | Accepted | Prove correctness before introducing scheduler complexity. |
 | TD-010 | Containerization | Docker Compose optional after local success | Deferred | Add only if it makes clean setup materially easier. |
-| TD-011 | Data content | Synthetic records only | Mandatory | Prevent privacy and security risks; no live systems or customer records. |
+| TD-011 | Data content | Synthetic records only | Accepted | Prevent privacy and security risks; no live systems or customer records. |
 | TD-012 | Warehouse model | Dimensional star schema | Planned | Clear analytical model with fact/dimension relationships. |
 | TD-013 | Event replay | Database-enforced idempotency | Mandatory | Prevent duplicate facts even across repeated/concurrent attempts. |
 | TD-014 | Currency reporting | One currency for simplest MVP or grouped currencies | Open/configurable | Never sum incomparable currencies without an explicit conversion model. |
-| TD-015 | Batch status | Explicit lifecycle states persisted in monitoring | Planned | Make process state and failure/recovery outcomes inspectable. |
+| TD-015 | Batch status | Explicit lifecycle states persisted in monitoring | Accepted | Make process state and failure/recovery outcomes inspectable. |
 
 ## 2. Decision-Making Rules
 
@@ -64,6 +64,15 @@ Append entries below rather than silently changing an existing decision.
 
 ## 5. Actual Implementation Updates
 
-No technical decision should be called implemented until the codebase and tests demonstrate it. As implementation starts, replace the `Planned` status for a row only after verifying the actual package/configuration/schema in Git. Record material deviations below.
-
-_No implementation-specific decision records yet._
+### TD-008 — PostgreSQL Access via psycopg2-binary
+- Date / phase: 2026-10-16 / Phase 1
+- Status: Accepted
+- Context: BankFlow needs a robust, parameterized database access layer for PostgreSQL schema initialization, high-volume batch staging, and transactional execution.
+- Options considered:
+  1. SQLAlchemy Core / ORM: flexible multi-dialect abstraction, but introduces additional layers, migration overhead, and extra dependencies.
+  2. psycopg2-binary: established Python-PostgreSQL driver, native support for batch operations (`execute_batch`), transactions, and parameterized SQL without ORM magic.
+  3. psycopg (v3): modern rewrite, but psycopg2-binary is already pre-installed in the local environment and provides battle-tested stability.
+- Decision: Select `psycopg2-binary>=2.9.0` as the primary database driver.
+- Rationale: Staging and data warehousing rely on explicit relational SQL, schemas, and transactions. An ORM is not needed and adds complexity for batch ETL.
+- Consequences / trade-offs: SQL statements are written explicitly in `.sql` files and Python constants, which maximizes transparency and learning value for SQL analytics.
+- Verification or evidence: Database connection module (`bankflow.db`), schema initializer (`bankflow.staging.schema`), and staging loader (`bankflow.staging.loader`) successfully verified in tests.

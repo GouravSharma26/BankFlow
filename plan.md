@@ -1,9 +1,9 @@
 # BankFlow — Banking Transaction ETL & Analytics Warehouse
 
-> **Project execution plan**  
-> Version: 1.0  
-> Status: Planned  
-> Primary audience: Student developer, reviewers, and interviewers  
+> **Project execution plan**<br>
+> Version: 1.0<br>
+> Status: Planned<br>
+> Primary audience: Student developer, reviewers, and interviewers<br>
 > Target: A reproducible, tested, portfolio-grade data engineering project using synthetic banking data only
 
 ---
@@ -1258,7 +1258,7 @@ Do not memorize answers without understanding the actual code. The project is mo
 
 Use a resume entry only after the corresponding feature exists and has been verified. Possible wording after implementation:
 
-**BankFlow — Banking Transaction ETL & Analytics Warehouse**  
+**BankFlow — Banking Transaction ETL & Analytics Warehouse**
 *Python, SQL, PostgreSQL, Pandas, pytest, GitHub Actions, Power BI/Metabase*
 
 - Designed a dimensional PostgreSQL warehouse with transaction facts and customer, account, branch, and date dimensions for analytical reporting.

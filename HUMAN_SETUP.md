@@ -56,11 +56,38 @@ On Windows, create a virtual environment using the Python launcher or the instal
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
 ```
 
 If PowerShell blocks virtual-environment activation, use an allowed terminal configuration or invoke the virtual environment's Python directly. Do not weaken machine-wide execution policies just to run this project.
 
-The final dependency-installation command will be added after `pyproject.toml` is implemented.
+### Verified execution commands:
+
+1. **Copy configuration:**
+   ```powershell
+   Copy-Item .env.example .env
+   # Edit .env with your local PostgreSQL password
+   ```
+
+2. **Run tests:**
+   ```powershell
+   python -m pytest tests -v
+   ```
+
+3. **Generate synthetic data:**
+   ```powershell
+   bankflow generate --output-dir data/samples --seed 42 --transactions 100
+   ```
+
+4. **Initialize PostgreSQL database:**
+   ```powershell
+   bankflow init-db
+   ```
+
+5. **Ingest dataset into staging:**
+   ```powershell
+   bankflow stage --input-dir data/samples
+   ```
 
 ## 6. PostgreSQL safety checklist
 

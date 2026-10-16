@@ -20,20 +20,20 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Exit criteria:** A clean repository baseline contains the plan and agent workflow docs, and the GitHub status is explicitly recorded. This phase does not mark application code complete.
 
-## Phase 1 — Python Foundation, Synthetic Generator, and Staging
+## Phase 1 — Python Foundation, Synthetic Generator, and Staging (Status: VERIFIED)
 
 **Goal:** Generate repeatable synthetic source files and ingest them into a PostgreSQL staging layer.
 
-- [ ] Finalize Python/package/dependency choices and document them.
-- [ ] Create `pyproject.toml`, source package, test layout, `.gitignore`, and `.env.example`.
-- [ ] Create safe local configuration and database connection handling.
-- [ ] Create source data contracts for customers, accounts, branches, and transactions.
-- [ ] Implement synthetic generator with fixed seed, configurable volume, dates, and defect scenarios.
-- [ ] Create database schema initialization for staging and batch metadata.
-- [ ] Implement file-level header/format checks and staging ingestion.
-- [ ] Capture source file, row number, batch ID, and ingest timestamp.
-- [ ] Add initial unit and database smoke tests.
-- [ ] Update setup instructions using verified commands.
+- [x] Finalize Python/package/dependency choices and document them.
+- [x] Create `pyproject.toml`, source package, test layout, `.gitignore`, and `.env.example`.
+- [x] Create safe local configuration and database connection handling.
+- [x] Create source data contracts for customers, accounts, branches, and transactions.
+- [x] Implement synthetic generator with fixed seed, configurable volume, dates, and defect scenarios.
+- [x] Create database schema initialization for staging and batch metadata.
+- [x] Implement file-level header/format checks and staging ingestion.
+- [x] Capture source file, row number, batch ID, and ingest timestamp.
+- [x] Add initial unit and database smoke tests.
+- [x] Update setup instructions using verified commands.
 
 **Exit criteria:** From a clean local setup, the developer can generate a small synthetic dataset, initialize the database, ingest it to staging, and inspect row/batch counts. At least one automated test verifies the path.
 
