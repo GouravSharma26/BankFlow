@@ -4,12 +4,13 @@
 
 ## Current Status
 
-- Overall status: `PHASE 2 VERIFIED`
+- Overall status: `REVIEW PENDING (Phase 2 Data-Integrity Fixes Verified — External Approval Pending)`
 - Current phase: `Phase 2 — Validation, Quarantine, and Data Contracts`
 - Last verified implementation phase: `Phase 2 — Validation, Quarantine, and Data Contracts`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 - Baseline commit: `cc2b371`
-- Last reviewed commit: `0f551a7`
+- Latest reviewed commit: `b178a42`
+- Implementation commit: `521947a`
 
 ## How to Maintain This File
 
@@ -270,6 +271,39 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Fixes or accepted risks: None.
 - Known limitations: Phase 3 dimensional warehouse (`dim_*`, `fact_transactions`), warehouse loading, idempotency/replay against fact tables, and analytics reports are Phase 3/4 scope.
 - Next action: Submit Phase 2 review corrections for approval; wait for external review before starting Phase 3.
+
+### Phase 2 — Final Data-Integrity Fixes (Current-Batch Duplicate Exclusion and Strict Dates)
+
+- Status: VERIFIED LOCALLY — EXTERNAL REVIEW APPROVAL PENDING
+- Date: 2026-10-16
+- Branch: phase/2-validation-quarantine
+- Commit SHA: Pending commit
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/2-validation-quarantine>
+- Push status: Pending push
+- Objective: Resolve the two remaining Phase 2 review findings without rebuilding working components or starting Phase 3:
+  1. Finding 1: Prevent ambiguous current-batch IDs from being restored by historical references. Retain the set of duplicate branch IDs, customer IDs, and account IDs detected in the current batch and exclude them when constructing trusted reference sets from previously validated batches. Ensure duplicate accounts cannot be restored into `valid_accounts`, causing referencing transactions to be rejected under `ACCOUNT_NOT_FOUND`. Apply consistent logic to branches and customers while preserving unrelated valid historical entities.
+  2. Finding 2: Enforce strict YYYY-MM-DD calendar-date formatting with a reusable strict date parser. Require exact `YYYY-MM-DD` syntax and calendar validation, never supply a default/fallback date, and return a consistent validation outcome using `RULE_DATE_PARSE_ERROR` ("DATE_PARSE_ERROR"). Use it for customer `created_date` and account `opened_date`.
+- Changes delivered:
+  - `src/bankflow/validation/dates.py`: Created reusable parser `parse_strict_date(value)` returning `StrictDateResult(is_valid, parsed_date, error_message)`. Enforces regex `^\d{4}-\d{2}-\d{2}$` without whitespace, validates calendar validity via `datetime.strptime(..., "%Y-%m-%d").date()` (rejecting leap days in non-leap years, day 30 in February, invalid months, etc.), rejects week dates (`2026-W03-4`) and compact dates (`20260115`), and never substitutes defaults.
+  - `src/bankflow/validation/validator.py`:
+    - Updated `_validate_branches()`, `_validate_customers()`, and `_validate_accounts()` to retain `duplicate_b_ids`, `duplicate_c_ids`, and `duplicate_a_ids` and exclude them when querying and loading trusted historical references from previously validated batches.
+    - Updated customer `created_date` and account `opened_date` validation to use `parse_strict_date` directly, mapping missing, empty, whitespace-only, malformed, non-calendar, and non-conforming dates to `RULE_DATE_PARSE_ERROR`.
+  - `src/bankflow/validation/__init__.py`: Exported `parse_strict_date` and `StrictDateResult`.
+  - `tests/test_validation.py`: Added `test_strict_date_parser` and `test_duplicate_identifiers_not_restored_from_historical_lookups`.
+  - `tests/test_validation_integration.py`: Added live PostgreSQL integration tests `test_historical_account_duplicated_in_current_batch_cannot_be_restored` and `test_strict_date_validation_integration`.
+  - `DEVELOPMENT_CHECKLIST.md` & `PHASE_LOG.md`: Updated to record 46 passed tests and reflect that external review approval is pending.
+- Tests/commands executed:
+  - `python -m pytest tests -v` (46 passed, 0 skipped, 0 failed in 118s against live `bankflow_test` PostgreSQL instance)
+  - `git diff --check` (clean, 0 errors)
+- Test outcomes: 46 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - Integration test `test_historical_account_duplicated_in_current_batch_cannot_be_restored` proves that an account duplicated in the current batch is not restored into `valid_accounts` despite existing in a previous validated batch, causing referencing transactions to be rejected under `ACCOUNT_NOT_FOUND`, while non-duplicated historical accounts resolve successfully.
+  - Integration test `test_strict_date_validation_integration` proves that `2026-01-15` is accepted, while `20260115`, `2026-W03-4`, `2026-02-30`, `""`, `"   "`, and malformed inputs are quarantined with `RULE_DATE_PARSE_ERROR`.
+  - Unit tests verify parser rejects defaults and validates leap years correctly.
+- Review findings: Resolved Finding 1 (prevent ambiguous current-batch IDs from being restored by historical references) and Finding 2 (enforce strict YYYY-MM-DD calendar-date formatting). External review approval remains pending.
+- Fixes or accepted risks: None.
+- Known limitations: Phase 3 dimensional warehouse (`dim_*`, `fact_transactions`), fact loading, idempotency/replay, and analytics remain in planned status.
+- Next action: Submit Phase 2 corrective fixes for external review approval; wait for approval before starting Phase 3.
 
 ## Phase Entry Template
 

@@ -2,11 +2,13 @@
 Unit tests for data-quality validation models, rules, and accounting logic.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
+
+from bankflow.validation.dates import StrictDateResult, parse_strict_date
 
 from bankflow.constants import (
     CHANNEL_ONLINE,
@@ -422,3 +424,163 @@ def test_validate_branches_and_customers_and_accounts():
     assert any(i.rule_code == RULE_DATE_PARSE_ERROR for i in acc_outcomes[10].issues)
     assert acc_outcomes[11].is_rejected
     assert any(i.rule_code == RULE_DATE_PARSE_ERROR for i in acc_outcomes[11].issues)
+
+
+def test_strict_date_parser():
+    """Verify strict YYYY-MM-DD parsing, calendar validity, and rejection of defaults."""
+    # 1. Valid dates
+    res1 = parse_strict_date("2026-01-15")
+    assert res1.is_valid
+    assert res1.parsed_date == date(2026, 1, 15)
+    assert res1.error_message is None
+
+    # Leap day in leap year
+    res2 = parse_strict_date("2024-02-29")
+    assert res2.is_valid
+    assert res2.parsed_date == date(2024, 2, 29)
+    assert res2.error_message is None
+
+    # Unpacking support
+    parsed_dt, err_msg = parse_strict_date("1999-12-31")
+    assert parsed_dt == date(1999, 12, 31)
+    assert err_msg is None
+
+    # 2. Rejected formats accepted by looser parsers (e.g., date.fromisoformat)
+    # Compact format (YYYYMMDD)
+    res_compact = parse_strict_date("20260115")
+    assert not res_compact.is_valid
+    assert res_compact.parsed_date is None
+    assert "exact YYYY-MM-DD format" in res_compact.error_message
+
+    # ISO week date (YYYY-Www-D)
+    res_week = parse_strict_date("2026-W03-4")
+    assert not res_week.is_valid
+    assert res_week.parsed_date is None
+    assert "exact YYYY-MM-DD format" in res_week.error_message
+
+    # 3. Calendar date validation (syntax matches but calendar date is impossible)
+    # Day 30 in February
+    res_feb30 = parse_strict_date("2026-02-30")
+    assert not res_feb30.is_valid
+    assert res_feb30.parsed_date is None
+    assert "not a valid calendar date" in res_feb30.error_message
+
+    # Leap day in non-leap year
+    res_feb29_nonleap = parse_strict_date("2026-02-29")
+    assert not res_feb29_nonleap.is_valid
+    assert res_feb29_nonleap.parsed_date is None
+    assert "not a valid calendar date" in res_feb29_nonleap.error_message
+
+    # Month out of range (13)
+    res_m13 = parse_strict_date("2026-13-01")
+    assert not res_m13.is_valid
+    assert res_m13.parsed_date is None
+    assert "not a valid calendar date" in res_m13.error_message
+
+    # Zero month / zero day
+    assert not parse_strict_date("2026-00-10").is_valid
+    assert not parse_strict_date("2026-01-00").is_valid
+
+    # 4. Missing, empty, whitespace-only, and malformed inputs
+    res_none = parse_strict_date(None)
+    assert not res_none.is_valid
+    assert res_none.parsed_date is None
+    assert "missing or null" in res_none.error_message
+
+    res_empty = parse_strict_date("")
+    assert not res_empty.is_valid
+    assert res_empty.parsed_date is None
+    assert "empty" in res_empty.error_message
+
+    res_ws = parse_strict_date("   ")
+    assert not res_ws.is_valid
+    assert res_ws.parsed_date is None
+    assert "only whitespace" in res_ws.error_message
+
+    res_leading_ws = parse_strict_date(" 2026-01-15")
+    assert not res_leading_ws.is_valid
+    assert res_leading_ws.parsed_date is None
+
+    res_trailing_ws = parse_strict_date("2026-01-15 ")
+    assert not res_trailing_ws.is_valid
+    assert res_trailing_ws.parsed_date is None
+
+    res_slash = parse_strict_date("2026/01/15")
+    assert not res_slash.is_valid
+    assert res_slash.parsed_date is None
+
+    res_us = parse_strict_date("01-15-2026")
+    assert not res_us.is_valid
+    assert res_us.parsed_date is None
+
+    res_single_digit = parse_strict_date("2026-1-15")
+    assert not res_single_digit.is_valid
+    assert res_single_digit.parsed_date is None
+
+    res_non_str = parse_strict_date(20260115)
+    assert not res_non_str.is_valid
+    assert res_non_str.parsed_date is None
+
+
+def test_duplicate_identifiers_not_restored_from_historical_lookups():
+    """
+    Verify that branch, customer, and account IDs detected as duplicates within the current
+    batch are NOT restored by historical reference lookups, while unrelated historical entities are preserved.
+    """
+    mock_conn = MagicMock()
+    engine = ValidationEngine(mock_conn)
+
+    # 1. Branches: BR-DUP is duplicated in current batch; historical lookup returns BR-DUP and BR-HIST-OK
+    mock_branch_rows = [
+        (1, 1, "branches.csv", "BR-DUP", "Downtown Branch 1", "NORTH"),
+        (2, 2, "branches.csv", "BR-DUP", "Downtown Branch 2", "NORTH"),
+        (3, 3, "branches.csv", "BR-CURR-OK", "Current Branch OK", "EAST"),
+    ]
+    cur_branch = MagicMock()
+    # 1st call: current batch; 2nd call: previous batches
+    cur_branch.fetchall.side_effect = [
+        mock_branch_rows,
+        [("BR-DUP",), ("BR-HIST-OK",)],
+    ]
+    valid_branches, branch_outcomes = engine._validate_branches(cur_branch, "batch_b")
+    # BR-DUP must NOT be in valid_branches even though it exists in previous batches
+    assert "BR-DUP" not in valid_branches
+    assert "BR-CURR-OK" in valid_branches
+    assert "BR-HIST-OK" in valid_branches
+    assert valid_branches == {"BR-CURR-OK", "BR-HIST-OK"}
+
+    # 2. Customers: CUST-DUP is duplicated in current batch; historical lookup returns CUST-DUP and CUST-HIST-OK
+    mock_cust_rows = [
+        (1, 1, "customers.csv", "CUST-DUP", "RETAIL", "2026-01-01", "ACTIVE"),
+        (2, 2, "customers.csv", "CUST-DUP", "RETAIL", "2026-01-01", "ACTIVE"),
+        (3, 3, "customers.csv", "CUST-CURR-OK", "RETAIL", "2026-01-01", "ACTIVE"),
+    ]
+    cur_cust = MagicMock()
+    cur_cust.fetchall.side_effect = [
+        mock_cust_rows,
+        [("CUST-DUP",), ("CUST-HIST-OK",)],
+    ]
+    valid_customers, cust_outcomes = engine._validate_customers(cur_cust, "batch_c")
+    assert "CUST-DUP" not in valid_customers
+    assert "CUST-CURR-OK" in valid_customers
+    assert "CUST-HIST-OK" in valid_customers
+    assert valid_customers == {"CUST-CURR-OK", "CUST-HIST-OK"}
+
+    # 3. Accounts: ACC-DUP is duplicated in current batch; historical lookup returns ACC-DUP and ACC-HIST-OK
+    mock_acc_rows = [
+        (1, 1, "accounts.csv", "ACC-DUP", "CUST-HIST-OK", "BR-HIST-OK", "CHECKING", "OPEN", "2026-01-01", "USD"),
+        (2, 2, "accounts.csv", "ACC-DUP", "CUST-HIST-OK", "BR-HIST-OK", "CHECKING", "OPEN", "2026-01-01", "USD"),
+        (3, 3, "accounts.csv", "ACC-CURR-OK", "CUST-HIST-OK", "BR-HIST-OK", "CHECKING", "OPEN", "2026-01-01", "EUR"),
+    ]
+    cur_acc = MagicMock()
+    cur_acc.fetchall.side_effect = [
+        mock_acc_rows,
+        [("ACC-DUP", "USD"), ("ACC-HIST-OK", "USD")],
+    ]
+    valid_accounts, acc_outcomes = engine._validate_accounts(
+        cur_acc, "batch_a", valid_customer_ids={"CUST-HIST-OK"}, valid_branch_ids={"BR-HIST-OK"}
+    )
+    assert "ACC-DUP" not in valid_accounts
+    assert "ACC-CURR-OK" in valid_accounts
+    assert "ACC-HIST-OK" in valid_accounts
+    assert valid_accounts == {"ACC-CURR-OK": "EUR", "ACC-HIST-OK": "USD"}

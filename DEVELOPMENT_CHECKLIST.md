@@ -37,7 +37,7 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Exit criteria:** From a clean local setup, the developer can generate a small synthetic dataset, initialize the database, ingest it to staging, and inspect row/batch counts. At least one automated test verifies the path.
 
-## Phase 2 — Validation, Quarantine, and Data Contracts
+## Phase 2 — Validation, Quarantine, and Data Contracts (Status: REVIEW PENDING)
 
 **Goal:** Make accepted/rejected outcomes explicit and reproducible.
 
@@ -50,7 +50,8 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 - [x] Add tests for each injected defect and expected disposition.
 - [x] Update `docs/data_contract.md` and data dictionary.
 
-**Exit criteria:** A mixed-quality dataset is processed deterministically; each tested defect produces the expected issue/outcome and the batch row accounting is explainable. (Verified: 42 tests pass with zero skips/failures, including lifecycle guards, cross-batch reference restrictions, uniqueness, and currency consistency).
+**Exit criteria:** A mixed-quality dataset is processed deterministically; each tested defect produces the expected issue/outcome and the batch row accounting is explainable. (Verified: 46 automated tests pass with zero skips/failures against bankflow_test, including lifecycle guards, cross-batch reference restrictions, uniqueness, currency consistency, and duplicate historical exclusion. External review approval remains pending).
+
 
 ## Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation
 

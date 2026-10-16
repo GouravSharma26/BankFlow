@@ -2,6 +2,7 @@
 BankFlow Validation and Quarantine Package.
 """
 
+from bankflow.validation.dates import StrictDateResult, parse_strict_date
 from bankflow.validation.models import (
     BatchValidationSummary,
     RowValidationOutcome,
@@ -16,4 +17,6 @@ __all__ = [
     "RowValidationOutcome",
     "BatchValidationSummary",
     "init_validation_schema",
+    "parse_strict_date",
+    "StrictDateResult",
 ]

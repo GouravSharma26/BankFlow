@@ -63,6 +63,7 @@ from bankflow.constants import (
     SUPPORTED_TRANSACTION_TYPES,
 )
 from bankflow.db import transaction
+from bankflow.validation.dates import parse_strict_date
 from bankflow.validation.models import (
     BatchValidationSummary,
     RowValidationOutcome,
@@ -315,9 +316,12 @@ class ValidationEngine:
         """, (batch_id,))
         for (prev_id,) in cur.fetchall():
             if prev_id and prev_id.strip():
-                valid_ids.add(prev_id.strip())
+                clean_prev_id = prev_id.strip()
+                if clean_prev_id not in duplicate_b_ids:
+                    valid_ids.add(clean_prev_id)
 
         return valid_ids, outcomes
+
 
     def _validate_customers(
         self, cur: psycopg2.extensions.cursor, batch_id: str
@@ -380,8 +384,8 @@ class ValidationEngine:
                     reason=f"Customer segment '{segment}' is unsupported. Allowed: {sorted(SUPPORTED_CUSTOMER_SEGMENTS)}",
                 ))
 
-            clean_date = (created_date or "").strip()
-            if not clean_date:
+            date_res = parse_strict_date(created_date)
+            if not date_res.is_valid:
                 outcome.issues.append(ValidationIssue(
                     batch_id=batch_id,
                     entity_type="CUSTOMER",
@@ -390,22 +394,8 @@ class ValidationEngine:
                     source_row_id=row_id,
                     rule_code=RULE_DATE_PARSE_ERROR,
                     severity=SEVERITY_ERROR,
-                    reason="Customer created_date is missing or empty.",
+                    reason=f"Customer created_date '{created_date}': {date_res.error_message}",
                 ))
-            else:
-                try:
-                    date.fromisoformat(clean_date)
-                except Exception:
-                    outcome.issues.append(ValidationIssue(
-                        batch_id=batch_id,
-                        entity_type="CUSTOMER",
-                        source_file=file_name,
-                        source_row_number=row_num,
-                        source_row_id=row_id,
-                        rule_code=RULE_DATE_PARSE_ERROR,
-                        severity=SEVERITY_ERROR,
-                        reason=f"Customer created_date '{created_date}' is not a valid ISO date (YYYY-MM-DD).",
-                    ))
 
             clean_status = (status or "").strip()
             if clean_status not in SUPPORTED_CUSTOMER_STATUSES:
@@ -442,9 +432,12 @@ class ValidationEngine:
         """, (batch_id,))
         for (prev_id,) in cur.fetchall():
             if prev_id and prev_id.strip():
-                valid_ids.add(prev_id.strip())
+                clean_prev_id = prev_id.strip()
+                if clean_prev_id not in duplicate_c_ids:
+                    valid_ids.add(clean_prev_id)
 
         return valid_ids, outcomes
+
 
     def _validate_accounts(
         self,
@@ -528,8 +521,8 @@ class ValidationEngine:
                 ))
 
             # Opened date check
-            clean_opened = (opened_dt or "").strip()
-            if not clean_opened:
+            date_res = parse_strict_date(opened_dt)
+            if not date_res.is_valid:
                 outcome.issues.append(ValidationIssue(
                     batch_id=batch_id,
                     entity_type="ACCOUNT",
@@ -538,22 +531,8 @@ class ValidationEngine:
                     source_row_id=row_id,
                     rule_code=RULE_DATE_PARSE_ERROR,
                     severity=SEVERITY_ERROR,
-                    reason="Account opened_date is missing or empty.",
+                    reason=f"Account opened_date '{opened_dt}': {date_res.error_message}",
                 ))
-            else:
-                try:
-                    date.fromisoformat(clean_opened)
-                except Exception:
-                    outcome.issues.append(ValidationIssue(
-                        batch_id=batch_id,
-                        entity_type="ACCOUNT",
-                        source_file=file_name,
-                        source_row_number=row_num,
-                        source_row_id=row_id,
-                        rule_code=RULE_DATE_PARSE_ERROR,
-                        severity=SEVERITY_ERROR,
-                        reason=f"Account opened_date '{opened_dt}' is not a valid ISO date (YYYY-MM-DD).",
-                    ))
 
             # Account type check
             clean_type = (a_type or "").strip()
@@ -631,7 +610,7 @@ class ValidationEngine:
         for prev_id, prev_curr in cur.fetchall():
             if prev_id and prev_id.strip() and prev_curr:
                 clean_prev_id = prev_id.strip()
-                if clean_prev_id not in valid_accounts:
+                if clean_prev_id not in duplicate_a_ids and clean_prev_id not in valid_accounts:
                     valid_accounts[clean_prev_id] = prev_curr.strip()
 
         return valid_accounts, outcomes
