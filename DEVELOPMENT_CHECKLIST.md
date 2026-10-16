@@ -37,7 +37,7 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Exit criteria:** From a clean local setup, the developer can generate a small synthetic dataset, initialize the database, ingest it to staging, and inspect row/batch counts. At least one automated test verifies the path.
 
-## Phase 2 — Validation, Quarantine, and Data Contracts (Status: REVIEW PENDING)
+## Phase 2 — Validation, Quarantine, and Data Contracts (Status: VERIFIED)
 
 **Goal:** Make accepted/rejected outcomes explicit and reproducible.
 
@@ -50,10 +50,10 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 - [x] Add tests for each injected defect and expected disposition.
 - [x] Update `docs/data_contract.md` and data dictionary.
 
-**Exit criteria:** A mixed-quality dataset is processed deterministically; each tested defect produces the expected issue/outcome and the batch row accounting is explainable. (Verified: 46 automated tests pass with zero skips/failures against bankflow_test, including lifecycle guards, cross-batch reference restrictions, uniqueness, currency consistency, and duplicate historical exclusion. External review approval remains pending).
+**Exit criteria:** A mixed-quality dataset is processed deterministically; each tested defect produces the expected issue/outcome and the batch row accounting is explainable. (Verified: 46 automated tests pass with zero skips/failures against bankflow_test, including lifecycle guards, cross-batch reference restrictions, uniqueness, currency consistency, and duplicate historical exclusion. Phase 2 externally reviewed and approved at commit `d4e3c02`).
 
 
-## Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation
+## Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation (Status: REVIEW PENDING)
 
 **Goal:** Load valid records to a dimensional PostgreSQL warehouse safely.
 
@@ -68,7 +68,7 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 - [x] Implement count and, where comparable, value reconciliation.
 - [x] Add integration and replay tests.
 
-**Exit criteria:** A valid mixed batch populates the warehouse; the same event/file can be replayed without duplicate facts; a forced load failure does not leave an invalid partial warehouse state; reconciliation matches the defined contract. (Verified: 57 automated unit and integration tests pass with zero skips/failures against bankflow_test, covering dimensional key resolution, replay idempotency, transactional rollback on error, lifecycle guards, grouped currency monetary reconciliation, and CLI pipeline commands).
+**Exit criteria:** A valid mixed batch populates the warehouse; the same event/file can be replayed without duplicate facts; a forced load failure does not leave an invalid partial warehouse state; reconciliation matches the defined contract. (Verified: 65 automated unit and integration tests pass with zero skips/failures against bankflow_test, covering dimensional key resolution, replay idempotency, whitespace-normalized joins, conflicting-replay payload rejection and quarantine, non-zero CLI exit codes on reconciliation failures, strict 2-decimal scale validation, historical-dimension dependency preflight guards, batch lifecycle status allowlist, and extended date dimension range. External review of Phase 3 review corrections is pending).
 
 ## Phase 4 — SQL Analytics and Metric Definitions
 

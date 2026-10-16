@@ -14,6 +14,7 @@ from bankflow.constants import (
     BATCH_STATUS_FAILED,
     BATCH_STATUS_SUCCEEDED,
     BATCH_STATUS_SUCCEEDED_WITH_REJECTIONS,
+    RULE_CONFLICTING_REPLAY_PAYLOAD,
 )
 from bankflow.warehouse.models import ReconciliationReport
 
@@ -106,10 +107,22 @@ class ReconciliationEngine:
                     f"inserted ({report.inserted_count}) + skipped ({report.skipped_count})."
                 )
 
-            # 4. Monetary Value Reconciliation (grouped by currency and status)
-            # Staging valid transactions value (excluding replays that were skipped)
+            # 4. Conflicting Replay Check: verify whether conflicting replays occurred
             cur.execute("""
-                SELECT st.currency, st.status, COALESCE(SUM(st.amount_raw::NUMERIC), 0)
+                SELECT count(*)
+                FROM monitoring.data_quality_issues
+                WHERE batch_id = %s AND rule_code = %s;
+            """, (batch_id, RULE_CONFLICTING_REPLAY_PAYLOAD))
+            conflict_count = cur.fetchone()[0]
+            if conflict_count > 0:
+                discrepancies.append(
+                    f"Batch contains {conflict_count} conflicting replay payload(s) where transaction event identity was reused with mismatched data."
+                )
+
+            # 5. Monetary Value Reconciliation (grouped by currency and status with whitespace normalization)
+            # Only identical replays are excluded from the staging value sum
+            cur.execute("""
+                SELECT TRIM(st.currency), TRIM(st.status), COALESCE(SUM(st.amount_raw::NUMERIC), 0)
                 FROM staging.stg_transactions st
                 WHERE st.batch_id = %s
                   AND st.source_row_id NOT IN (
@@ -117,11 +130,17 @@ class ReconciliationEngine:
                   )
                   AND NOT EXISTS (
                       SELECT 1 FROM warehouse.fact_transactions ft
-                      WHERE ft.source_system = st.source_system
-                        AND ft.transaction_id = st.transaction_id
+                      JOIN warehouse.dim_account da ON ft.account_key = da.account_key
+                      WHERE ft.source_system = COALESCE(NULLIF(TRIM(st.source_system), ''), 'CORE_BANKING')
+                        AND ft.transaction_id = TRIM(st.transaction_id)
                         AND ft.source_batch_id != st.batch_id
+                        AND ft.amount = st.amount_raw::NUMERIC
+                        AND TRIM(ft.currency) = TRIM(st.currency)
+                        AND TRIM(ft.status) = TRIM(st.status)
+                        AND TRIM(da.account_id) = TRIM(st.account_id)
+                        AND ft.transaction_timestamp = st.transaction_timestamp_raw::TIMESTAMPTZ
                   )
-                GROUP BY st.currency, st.status;
+                GROUP BY TRIM(st.currency), TRIM(st.status);
             """, (batch_id,))
             staging_values: Dict[Tuple[str, str], Decimal] = {
                 (r[0].strip(), r[1].strip()): Decimal(str(r[2])) for r in cur.fetchall()
@@ -130,10 +149,10 @@ class ReconciliationEngine:
 
             # Warehouse facts value for this batch
             cur.execute("""
-                SELECT ft.currency, ft.status, COALESCE(SUM(ft.amount), 0)
+                SELECT TRIM(ft.currency), TRIM(ft.status), COALESCE(SUM(ft.amount), 0)
                 FROM warehouse.fact_transactions ft
                 WHERE ft.source_batch_id = %s
-                GROUP BY ft.currency, ft.status;
+                GROUP BY TRIM(ft.currency), TRIM(ft.status);
             """, (batch_id,))
             warehouse_values: Dict[Tuple[str, str], Decimal] = {
                 (r[0].strip(), r[1].strip()): Decimal(str(r[2])) for r in cur.fetchall()
@@ -154,7 +173,7 @@ class ReconciliationEngine:
             report.discrepancies = discrepancies
             report.is_reconciled = (len(discrepancies) == 0)
 
-            # 5. Persist reconciliation status in monitoring.etl_batch_runs
+            # 6. Persist reconciliation status in monitoring.etl_batch_runs
             status_str = "RECONCILED" if report.is_reconciled else "UNRECONCILED"
             cur.execute("""
                 UPDATE monitoring.etl_batch_runs

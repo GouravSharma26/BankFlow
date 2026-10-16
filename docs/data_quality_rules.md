@@ -39,7 +39,7 @@ File-level errors and row-level errors are strictly distinguished. A file with m
 | `TXN_ID_DUPLICATE` | Row | Ambiguous duplicate transaction ID within a batch | ERROR | REJECTED / Quarantined (all occurrences) |
 | `AMOUNT_MISSING` | Row | Required amount field is empty or whitespace | ERROR | REJECTED / Quarantined |
 | `AMOUNT_PARSE_ERROR` | Row | Amount cannot be parsed as a finite numeric decimal | ERROR | REJECTED / Quarantined |
-| `AMOUNT_RULE_VIOLATION` | Row | Amount violates domain constraint (must be strictly > 0.00) | ERROR | REJECTED / Quarantined |
+| `AMOUNT_RULE_VIOLATION` | Row | Amount violates domain constraint (must be strictly > 0.00 and max 2 decimal places) | ERROR | REJECTED / Quarantined |
 | `TIMESTAMP_PARSE_ERROR` | Row | Timestamp cannot be parsed as ISO 8601 or lacks explicit timezone offset | ERROR | REJECTED / Quarantined |
 | `TYPE_UNSUPPORTED` | Row | Transaction type is not in `SUPPORTED_TRANSACTION_TYPES` | ERROR | REJECTED / Quarantined |
 | `STATUS_UNSUPPORTED` | Row | Status is not in `SUPPORTED_TRANSACTION_STATUSES` | ERROR | REJECTED / Quarantined |
@@ -48,7 +48,8 @@ File-level errors and row-level errors are strictly distinguished. A file with m
 | `CURRENCY_UNSUPPORTED` | Row | Currency is not in `SUPPORTED_CURRENCIES` (USD, EUR, GBP) | ERROR | REJECTED / Quarantined |
 | `CURRENCY_MISMATCH` | Row | Transaction currency does not match referenced account currency | ERROR | REJECTED / Quarantined |
 | `SOURCE_SYSTEM_MISSING` | Row | Required source system is empty or whitespace | ERROR | REJECTED / Quarantined |
-| `SOURCE_REPLAY_SKIPPED` | Event | Immutable event already present in warehouse (Phase 3 dependency) | INFO | SKIPPED |
+| `SOURCE_REPLAY_SKIPPED` | Event | Immutable identical event already present in warehouse | INFO | SKIPPED |
+| `CONFLICTING_REPLAY_PAYLOAD` | Event | Replay of existing event identity with conflicting payload | ERROR | REJECTED / Quarantined |
 
 ## 3. Policy Decisions
 

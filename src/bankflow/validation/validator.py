@@ -791,6 +791,17 @@ class ValidationEngine:
                             severity=SEVERITY_ERROR,
                             reason=f"Amount {parsed_decimal} must be strictly greater than 0.00.",
                         ))
+                    elif parsed_decimal.as_tuple().exponent < -2:
+                        outcome.issues.append(ValidationIssue(
+                            batch_id=batch_id,
+                            entity_type="TRANSACTION",
+                            source_file=file_name,
+                            source_row_number=row_num,
+                            source_row_id=row_id,
+                            rule_code=RULE_AMOUNT_RULE_VIOLATION,
+                            severity=SEVERITY_ERROR,
+                            reason=f"Amount '{amt_raw}' exceeds allowed monetary scale (maximum 2 decimal places).",
+                        ))
                 except (InvalidOperation, ValueError):
                     outcome.issues.append(ValidationIssue(
                         batch_id=batch_id,

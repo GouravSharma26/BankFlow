@@ -55,7 +55,7 @@ def init_warehouse_schema(conn: psycopg2.extensions.connection) -> None:
                     EXTRACT(QUARTER FROM d)::INT AS quarter_number,
                     EXTRACT(YEAR FROM d)::INT AS year_number,
                     (EXTRACT(ISODOW FROM d) IN (6, 7)) AS is_weekend
-                FROM generate_series('2020-01-01'::DATE, '2035-12-31'::DATE, '1 day'::INTERVAL) d
+                FROM generate_series('2015-01-01'::DATE, '2040-12-31'::DATE, '1 day'::INTERVAL) d
                 ON CONFLICT (date_key) DO NOTHING;
 
                 CREATE TABLE IF NOT EXISTS warehouse.dim_transaction_type (

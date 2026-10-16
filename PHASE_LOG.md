@@ -4,13 +4,14 @@
 
 ## Current Status
 
-- Overall status: `VERIFIED AND PUSHED (Phase 3 Completed & Pushed — Review Pending)`
+- Overall status: `CHANGES IMPLEMENTED — Phase 3 Review Corrections Awaiting Review`
 - Current phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation`
-- Last verified implementation phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation`
+- Last approved implementation phase: `Phase 2 — Validation, Quarantine, and Data Contracts (Approved at commit d4e3c02)`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 - Baseline commit: `cc2b371`
-- Latest reviewed commit: `d51e4e3`
-- Implementation commit: `3b5b262`
+- Latest reviewed commit: `d4e3c02`
+- Implementation baseline merged to main: `7fc540d`
+- Corrective implementation branch: `phase/3-warehouse-loading`
 
 ## How to Maintain This File
 
@@ -274,12 +275,12 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 
 ### Phase 2 — Final Data-Integrity Fixes (Current-Batch Duplicate Exclusion and Strict Dates)
 
-- Status: VERIFIED LOCALLY — EXTERNAL REVIEW APPROVAL PENDING
+- Status: VERIFIED AND APPROVED
 - Date: 2026-10-16
 - Branch: phase/2-validation-quarantine
-- Commit SHA: 5e94dfc (Implementation) / d51e4e3 (Documentation)
+- Commit SHA: 5e94dfc (Implementation) / d51e4e3 (Documentation) / d4e3c02 (Review approval)
 - GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/2-validation-quarantine>
-- Push status: Pushed to origin/phase/2-validation-quarantine
+- Push status: Pushed to origin/phase/2-validation-quarantine and approved at commit d4e3c02
 - Objective: Resolve the two remaining Phase 2 review findings without rebuilding working components or starting Phase 3:
   1. Finding 1: Prevent ambiguous current-batch IDs from being restored by historical references. Retain the set of duplicate branch IDs, customer IDs, and account IDs detected in the current batch and exclude them when constructing trusted reference sets from previously validated batches. Ensure duplicate accounts cannot be restored into `valid_accounts`, causing referencing transactions to be rejected under `ACCOUNT_NOT_FOUND`. Apply consistent logic to branches and customers while preserving unrelated valid historical entities.
   2. Finding 2: Enforce strict YYYY-MM-DD calendar-date formatting with a reusable strict date parser. Require exact `YYYY-MM-DD` syntax and calendar validation, never supply a default/fallback date, and return a consistent validation outcome using `RULE_DATE_PARSE_ERROR` ("DATE_PARSE_ERROR"). Use it for customer `created_date` and account `opened_date`.
@@ -300,50 +301,59 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - Integration test `test_historical_account_duplicated_in_current_batch_cannot_be_restored` proves that an account duplicated in the current batch is not restored into `valid_accounts` despite existing in a previous validated batch, causing referencing transactions to be rejected under `ACCOUNT_NOT_FOUND`, while non-duplicated historical accounts resolve successfully.
   - Integration test `test_strict_date_validation_integration` proves that `2026-01-15` is accepted, while `20260115`, `2026-W03-4`, `2026-02-30`, `""`, `"   "`, and malformed inputs are quarantined with `RULE_DATE_PARSE_ERROR`.
   - Unit tests verify parser rejects defaults and validates leap years correctly.
-- Review findings: Resolved Finding 1 (prevent ambiguous current-batch IDs from being restored by historical references) and Finding 2 (enforce strict YYYY-MM-DD calendar-date formatting). External review approval remains pending.
+- Review findings: Resolved Finding 1 (prevent ambiguous current-batch IDs from being restored by historical references) and Finding 2 (enforce strict YYYY-MM-DD calendar-date formatting). External review approved at commit `d4e3c02`.
 - Fixes or accepted risks: None.
 - Known limitations: Phase 3 dimensional warehouse (`dim_*`, `fact_transactions`), fact loading, idempotency/replay, and analytics remain in planned status.
 - Next action: Submit Phase 2 corrective fixes for external review approval; wait for approval before starting Phase 3.
 
 ### Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation
 
-- Status: VERIFIED LOCALLY
+- Status: IMPLEMENTED (Merged to main at 7fc540d, review requested corrections)
 - Date: 2026-10-16
 - Branch: phase/3-warehouse-loading
-- Commit SHA: 3b5b262 (Implementation) / 10cd29b (Documentation)
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/3-warehouse-loading>
-- Push status: Pushed successfully to origin/phase/3-warehouse-loading
+- Commit SHA: 3b5b262 (Implementation) / 10cd29b (Documentation) / 7fc540d (Merged baseline on main)
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/7fc540d46638ad08d80c543b6566185619865040>
+- Push status: Pushed to origin/phase/3-warehouse-loading and merged to main at 7fc540d
 - Objective: Load valid staging records to a dimensional PostgreSQL warehouse safely, enforce database-level idempotency, implement strict transactional loading, record replay skips as informational issues, and verify count and grouped-currency value reconciliation.
+- Review findings: 8 review findings received requiring corrections (whitespace normalization in joins, conflicting replay payload detection/quarantine, non-zero CLI exit code on unreconciled runs, 2-decimal monetary scale validation, historical-dimension dependency preflight guards, batch lifecycle allowlist, date dimension range extension, and phase status documentation).
+- Next action: Implement review corrections in a follow-up commit on `phase/3-warehouse-loading`.
+
+### Phase 3 — Review Findings and Data-Integrity Corrections
+
+- Status: VERIFIED LOCALLY — AWAITING REVIEW
+- Date: 2026-10-17
+- Branch: phase/3-warehouse-loading
+- Commit SHA: Pending follow-up commit
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/3-warehouse-loading>
+- Push status: In progress (push to origin/phase/3-warehouse-loading)
+- Objective: Address all 8 Phase 3 review findings covering warehouse join normalization, conflicting-replay detection and quarantine, CLI non-zero exit codes on reconciliation failure, 2-decimal monetary scale enforcement, historical-dimension dependency preflight guards, batch lifecycle status allowlist, extended date dimension coverage, and documentation consistency.
 - Changes delivered:
-  - `sql/03_warehouse_schema.sql` and `src/bankflow/warehouse/schema.py`:
-    Created warehouse schema and conformed dimensions (`dim_date` pre-populated 2020–2035 via `generate_series`, `dim_transaction_type` seeded with 6 types, `dim_branch`, `dim_customer`, `dim_account`) and `fact_transactions` with `CONSTRAINT uq_fact_transactions_source_event UNIQUE (source_system, transaction_id)`.
-  - `src/bankflow/warehouse/models.py`:
-    Implemented `WarehouseLoadingSummary` and `ReconciliationReport` data models.
-  - `src/bankflow/warehouse/loader.py`:
-    Implemented `WarehouseLoader` with row-level batch lifecycle guards (`FOR UPDATE`, requiring `SUCCEEDED` or `SUCCEEDED_WITH_REJECTIONS` and `validated_at IS NOT NULL`), relational ordering (branches -> customers -> accounts -> facts), atomic transaction scope, database idempotency (`ON CONFLICT (source_system, transaction_id) DO NOTHING RETURNING transaction_key`), replay skip accounting (`records_skipped`), and logging informational `RULE_SOURCE_REPLAY_SKIPPED` issues with `DISPOSITION_SKIPPED`.
-  - `src/bankflow/warehouse/reconciliation.py`:
-    Implemented `ReconciliationEngine` verifying count invariants (`staged == valid + rejected`, `quarantined == rejected`, `valid_stg_txns == inserted + skipped`) and grouped monetary values by `(currency, status)`. Persists `reconciliation_status` (`RECONCILED` or `UNRECONCILED`) on `monitoring.etl_batch_runs`.
-  - `src/bankflow/__main__.py`:
-    Updated `init-db` to include warehouse schema, added `load`, `reconcile`, and `run` (full pipeline) CLI commands, and enhanced `batch-status`.
-  - `tests/test_warehouse.py` & `tests/test_warehouse_integration.py`:
-    Added 3 unit tests and 8 live PostgreSQL integration tests covering schema creation, clean batch loading, idempotency/replay, lifecycle guards, transactional rollback on error, reconciliation discrepancy detection, defective batch quarantine boundaries, and CLI commands. Total test suite increased from 46 to 57 passing tests (0 skipped, 0 failed).
-  - Documentation:
-    Updated `docs/data_dictionary.md` (Section 5: documented all 6 warehouse tables), `docs/design_decisions.md` (TD-012, TD-013, TD-018 accepted), `DEVELOPMENT_CHECKLIST.md` (marked all Phase 3 tasks complete).
+  1. Whitespace-normalized warehouse joins (Finding 1): Updated `src/bankflow/warehouse/loader.py` to use `TRIM()` in warehouse dimension and fact join queries (`TRIM(st.account_id) = da.account_id`, `TRIM(st.transaction_type) = dtt.transaction_type_code`, etc.) and lookup queries, ensuring valid whitespace-padded staging records correctly resolve and populate dimensions/facts without altering original raw staging values. Added live integration test `test_warehouse_whitespace_normalized_joins_and_loading`.
+  2. Conflicting replay payload detection and quarantine (Finding 2): Updated `src/bankflow/warehouse/loader.py` and `src/bankflow/warehouse/reconciliation.py`. When a candidate fact encounters an existing `(source_system, transaction_id)` in the warehouse:
+     - If the payload matches (`amount`, `currency`, `status`, `account_id`, `transaction_timestamp`), it is recorded as an informational replay skip (`records_skipped += 1`, `RULE_SOURCE_REPLAY_SKIPPED`, `DISPOSITION_SKIPPED`).
+     - If the payload conflicts (e.g. differing amount, currency, status, or account), it is NOT counted as a replay skip. Instead, it is logged as an error (`RULE_CONFLICTING_REPLAY_PAYLOAD`, `SEVERITY_ERROR`, `DISPOSITION_REJECTED`), quarantined in `quarantine.quarantined_records`, transferred from `records_valid` to `records_rejected`, the batch transitions to `SUCCEEDED_WITH_REJECTIONS`, and reconciliation flags an explicit discrepancy (`UNRECONCILED`). Added live integration test `test_warehouse_conflicting_replay_payload_rejected_and_quarantined`.
+  3. Non-zero CLI exit code on reconciliation failure (Finding 3): Updated `src/bankflow/__main__.py` in `load`, `reconcile`, and `run` commands to call `sys.exit(1)` whenever reconciliation fails (`reconciliation_status != 'RECONCILED'` or `not report.is_reconciled`), while preserving formatted diagnostic output. Added integration tests in `test_cli_unreconciled_returns_nonzero_exit_code` verifying non-zero exit codes for `reconcile`, `load`, and `run`.
+  4. Monetary scale validation (Finding 4): Updated `src/bankflow/validation/validator.py` to enforce maximum 2 decimal places (`parsed_decimal.as_tuple().exponent < -2`) during row validation, rejecting numbers such as `10.001` under `RULE_AMOUNT_RULE_VIOLATION` before warehouse insertion. Added unit test `test_amount_decimal_scale_validation` and integration test `test_amount_with_more_than_two_decimals_rejected_in_integration`.
+  5. Historical dimension dependency preflight guard (Finding 5): Implemented `_preflight_dimension_checks()` in `WarehouseLoader` to verify that all customers, branches, and accounts referenced by a batch's valid records exist in the warehouse dimensions before attempting to insert facts. If upstream dependencies are unpopulated, load raises `ValueError` with explicit missing identifiers. Added integration test `test_warehouse_historical_dimension_dependency_preflight_guard`.
+  6. Explicit batch lifecycle status allowlist (Finding 6): Hardened `WarehouseLoader.load_batch()` with strict allowlist check `if status not in (BATCH_STATUS_SUCCEEDED, BATCH_STATUS_SUCCEEDED_WITH_REJECTIONS): raise ValueError(...)` ensuring unsupported states cannot proceed even if `validated_at` is non-null. Added test coverage in `test_warehouse_lifecycle_guard_rejects_ineligible_batches`.
+  7. Extended date dimension range (Finding 7): Expanded default `dim_date` pre-population in `sql/03_warehouse_schema.sql` and `src/bankflow/warehouse/schema.py` to 2015–2040, and implemented dynamic dimension expansion `_ensure_batch_dates_covered()` in `WarehouseLoader` to insert any missing date rows automatically. Added integration test `test_warehouse_extended_date_dimension_support`.
+  8. Documentation consistency (Finding 8): Updated `DEVELOPMENT_CHECKLIST.md` and `PHASE_LOG.md` recording Phase 2 approval (commit `d4e3c02`), main branch merge baseline (`7fc540d`), and Phase 3 review status.
 - Tests/commands executed:
-  - `pytest -v tests/test_warehouse.py` (3 passed in 0.19s)
-  - `pytest -v tests/test_warehouse_integration.py` (8 passed in 80s against live PostgreSQL test container)
-  - `pytest -v` (57 passed in 167s across all unit and integration suites)
-  - `git diff --check` (clean, 0 errors)
-- Test outcomes: 57 passed, 0 skipped, 0 failed.
+  - `pytest -v tests/test_validation.py` (8 passed)
+  - `pytest -v tests/test_warehouse_integration.py` (15 passed)
+  - `pytest -v` (65 passed, 0 skipped, 0 failed in 253s against live PostgreSQL `bankflow_test` instance)
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes: 65 passed, 0 skipped, 0 failed.
 - Acceptance evidence:
-  - All 57 tests passing against live PostgreSQL `bankflow_test`.
-  - Clean batches populate `dim_branch`, `dim_customer`, `dim_account`, and `fact_transactions` with surrogate keys and valid foreign key references.
-  - Replay of an identical batch or existing events inserts 0 new facts, records N skipped replays, produces zero duplicates in `fact_transactions`, logs `RULE_SOURCE_REPLAY_SKIPPED` INFO issues, and reconciles cleanly.
-  - Simulated failure during fact loading completely rolls back the database transaction, leaving zero partial records in the warehouse.
-  - Mutating valid counts or amounts immediately flags `reconciliation_status = 'UNRECONCILED'` with explicit mismatch diagnostics.
-  - CLI commands `load`, `reconcile`, `batch-status`, and `run` operate seamlessly.
-- Known limitations: Phase 4 SQL analytics reports and Phase 5 dashboard are next phases.
-- Next action: Commit Phase 3 changes, push branch `phase/3-warehouse-loading` to GitHub, and provide Phase 3 handoff report for review.
+  - 65 automated tests passing across the entire suite.
+  - Conflicting transaction replays trigger quarantine and fail reconciliation with exit code 1.
+  - Whitespace-padded staging records resolve correctly into dimensions and facts.
+  - 10.001 is quarantined with `AMOUNT_RULE_VIOLATION`.
+  - Unloaded upstream dependencies halt loading during preflight.
+  - Unsupported lifecycle states are rejected.
+  - Transactions dated 2014 and 2042 dynamically generate date keys and load successfully.
+- Review findings: All 8 review findings resolved.
+- Next action: Commit corrective changes, push to `phase/3-warehouse-loading`, and submit for review.
 
 ## Phase Entry Template
 
