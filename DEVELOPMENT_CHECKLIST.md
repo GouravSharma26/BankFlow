@@ -57,18 +57,18 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Goal:** Load valid records to a dimensional PostgreSQL warehouse safely.
 
-- [ ] Create dimension tables for customer, account, branch, date, and transaction type as required by the plan.
-- [ ] Create `fact_transactions` with documented transaction grain and source lineage.
-- [ ] Define stable business-event identity and enforce uniqueness in PostgreSQL.
-- [ ] Load dimensions before facts and resolve dimension keys explicitly.
-- [ ] Use database transactions for logically related warehouse changes.
-- [ ] Implement replay-safe loading/upsert behavior and clear insert/update/skip counts.
-- [ ] Handle transaction statuses, reversals, currency, and late arrivals according to documented semantics.
-- [ ] Implement batch state transitions and machine-/human-readable summaries.
-- [ ] Implement count and, where comparable, value reconciliation.
-- [ ] Add integration and replay tests.
+- [x] Create dimension tables for customer, account, branch, date, and transaction type as required by the plan.
+- [x] Create `fact_transactions` with documented transaction grain and source lineage.
+- [x] Define stable business-event identity and enforce uniqueness in PostgreSQL.
+- [x] Load dimensions before facts and resolve dimension keys explicitly.
+- [x] Use database transactions for logically related warehouse changes.
+- [x] Implement replay-safe loading/upsert behavior and clear insert/update/skip counts.
+- [x] Handle transaction statuses, reversals, currency, and late arrivals according to documented semantics.
+- [x] Implement batch state transitions and machine-/human-readable summaries.
+- [x] Implement count and, where comparable, value reconciliation.
+- [x] Add integration and replay tests.
 
-**Exit criteria:** A valid mixed batch populates the warehouse; the same event/file can be replayed without duplicate facts; a forced load failure does not leave an invalid partial warehouse state; reconciliation matches the defined contract.
+**Exit criteria:** A valid mixed batch populates the warehouse; the same event/file can be replayed without duplicate facts; a forced load failure does not leave an invalid partial warehouse state; reconciliation matches the defined contract. (Verified: 57 automated unit and integration tests pass with zero skips/failures against bankflow_test, covering dimensional key resolution, replay idempotency, transactional rollback on error, lifecycle guards, grouped currency monetary reconciliation, and CLI pipeline commands).
 
 ## Phase 4 — SQL Analytics and Metric Definitions
 

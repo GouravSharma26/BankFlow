@@ -4,13 +4,13 @@
 
 ## Current Status
 
-- Overall status: `REVIEW PENDING (Phase 2 Data-Integrity Fixes Verified — External Approval Pending)`
-- Current phase: `Phase 2 — Validation, Quarantine, and Data Contracts`
-- Last verified implementation phase: `Phase 2 — Validation, Quarantine, and Data Contracts`
+- Overall status: `VERIFIED LOCALLY (Phase 3 Completed — Push & Review Pending)`
+- Current phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation`
+- Last verified implementation phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 - Baseline commit: `cc2b371`
-- Latest reviewed commit: `b178a42`
-- Implementation commit: `5e94dfc`
+- Latest reviewed commit: `d51e4e3`
+- Implementation commit: `3b5b262`
 
 ## How to Maintain This File
 
@@ -304,6 +304,46 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Fixes or accepted risks: None.
 - Known limitations: Phase 3 dimensional warehouse (`dim_*`, `fact_transactions`), fact loading, idempotency/replay, and analytics remain in planned status.
 - Next action: Submit Phase 2 corrective fixes for external review approval; wait for approval before starting Phase 3.
+
+### Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation
+
+- Status: VERIFIED LOCALLY
+- Date: 2026-10-16
+- Branch: phase/3-warehouse-loading
+- Commit SHA: 3b5b262
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/3b5b262>
+- Push status: PENDING_PUSH
+- Objective: Load valid staging records to a dimensional PostgreSQL warehouse safely, enforce database-level idempotency, implement strict transactional loading, record replay skips as informational issues, and verify count and grouped-currency value reconciliation.
+- Changes delivered:
+  - `sql/03_warehouse_schema.sql` and `src/bankflow/warehouse/schema.py`:
+    Created warehouse schema and conformed dimensions (`dim_date` pre-populated 2020–2035 via `generate_series`, `dim_transaction_type` seeded with 6 types, `dim_branch`, `dim_customer`, `dim_account`) and `fact_transactions` with `CONSTRAINT uq_fact_transactions_source_event UNIQUE (source_system, transaction_id)`.
+  - `src/bankflow/warehouse/models.py`:
+    Implemented `WarehouseLoadingSummary` and `ReconciliationReport` data models.
+  - `src/bankflow/warehouse/loader.py`:
+    Implemented `WarehouseLoader` with row-level batch lifecycle guards (`FOR UPDATE`, requiring `SUCCEEDED` or `SUCCEEDED_WITH_REJECTIONS` and `validated_at IS NOT NULL`), relational ordering (branches -> customers -> accounts -> facts), atomic transaction scope, database idempotency (`ON CONFLICT (source_system, transaction_id) DO NOTHING RETURNING transaction_key`), replay skip accounting (`records_skipped`), and logging informational `RULE_SOURCE_REPLAY_SKIPPED` issues with `DISPOSITION_SKIPPED`.
+  - `src/bankflow/warehouse/reconciliation.py`:
+    Implemented `ReconciliationEngine` verifying count invariants (`staged == valid + rejected`, `quarantined == rejected`, `valid_stg_txns == inserted + skipped`) and grouped monetary values by `(currency, status)`. Persists `reconciliation_status` (`RECONCILED` or `UNRECONCILED`) on `monitoring.etl_batch_runs`.
+  - `src/bankflow/__main__.py`:
+    Updated `init-db` to include warehouse schema, added `load`, `reconcile`, and `run` (full pipeline) CLI commands, and enhanced `batch-status`.
+  - `tests/test_warehouse.py` & `tests/test_warehouse_integration.py`:
+    Added 3 unit tests and 8 live PostgreSQL integration tests covering schema creation, clean batch loading, idempotency/replay, lifecycle guards, transactional rollback on error, reconciliation discrepancy detection, defective batch quarantine boundaries, and CLI commands. Total test suite increased from 46 to 57 passing tests (0 skipped, 0 failed).
+  - Documentation:
+    Updated `docs/data_dictionary.md` (Section 5: documented all 6 warehouse tables), `docs/design_decisions.md` (TD-012, TD-013, TD-018 accepted), `DEVELOPMENT_CHECKLIST.md` (marked all Phase 3 tasks complete).
+- Tests/commands executed:
+  - `pytest -v tests/test_warehouse.py` (3 passed in 0.19s)
+  - `pytest -v tests/test_warehouse_integration.py` (8 passed in 80s against live PostgreSQL test container)
+  - `pytest -v` (57 passed in 167s across all unit and integration suites)
+  - `git diff --check` (clean, 0 errors)
+- Test outcomes: 57 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - All 57 tests passing against live PostgreSQL `bankflow_test`.
+  - Clean batches populate `dim_branch`, `dim_customer`, `dim_account`, and `fact_transactions` with surrogate keys and valid foreign key references.
+  - Replay of an identical batch or existing events inserts 0 new facts, records N skipped replays, produces zero duplicates in `fact_transactions`, logs `RULE_SOURCE_REPLAY_SKIPPED` INFO issues, and reconciles cleanly.
+  - Simulated failure during fact loading completely rolls back the database transaction, leaving zero partial records in the warehouse.
+  - Mutating valid counts or amounts immediately flags `reconciliation_status = 'UNRECONCILED'` with explicit mismatch diagnostics.
+  - CLI commands `load`, `reconcile`, `batch-status`, and `run` operate seamlessly.
+- Known limitations: Phase 4 SQL analytics reports and Phase 5 dashboard are next phases.
+- Next action: Commit Phase 3 changes, push branch `phase/3-warehouse-loading` to GitHub, and provide Phase 3 handoff report for review.
 
 ## Phase Entry Template
 
