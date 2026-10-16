@@ -63,18 +63,25 @@ If PowerShell blocks virtual-environment activation, use an allowed terminal con
 
 ### Verified execution commands:
 
-1. **Start PostgreSQL with Docker Compose (Recommended):**
+1. **Configure environment (.env):**
+   ```powershell
+   # If you do not already have a .env file:
+   Copy-Item .env.example .env
+   ```
+   *Important:* Create `.env` and set the intended host port **before** starting Docker Compose.
+   If host port 5432 is already occupied by a local Windows PostgreSQL service, set `BANKFLOW_DB_PORT=5433` in your `.env`.
+   If you already have a working `.env`, do not overwrite it.
+
+2. **Start PostgreSQL with Docker Compose (Recommended):**
    ```powershell
    docker compose up -d
    ```
-   *Note:* Automatically starts PostgreSQL 17 and creates both `bankflow` and `bankflow_test` databases.
-   If port 5432 is already occupied by a local Windows service, either stop the service or set `BANKFLOW_DB_PORT=5433` in your `.env`.
+   *Note:* Starts PostgreSQL 17 on loopback `127.0.0.1:${BANKFLOW_DB_PORT:-5432}` and automatically creates both `bankflow` and `bankflow_test` databases via `docker/01-init-test-db.sql` upon initial volume creation.
 
-2. **Copy configuration:**
-   ```powershell
-   Copy-Item .env.example .env
-   # Default settings in .env match the docker-compose service
-   ```
+   > [!CAUTION]
+   > Do **not** run `docker compose down -v` to troubleshoot ordinary connection issues. The `-v` flag removes the persistent volume (`bankflow_postgres_data`) and deletes your local databases.
+   >
+   > The initialization script `docker/01-init-test-db.sql` runs only when PostgreSQL initializes a brand-new data directory. If you change credentials after the volume exists, updating `.env` alone will not alter the existing database user's password.
 
 3. **Run tests:**
    ```powershell

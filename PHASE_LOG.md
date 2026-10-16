@@ -85,9 +85,9 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - Updated `docs/design_decisions.md` (TD-008 accepted psycopg2-binary, TD-010 accepted Docker Compose), `docs/data_dictionary.md` (populated staging/monitoring schemas), and `HUMAN_SETUP.md` (verified execution and docker compose commands).
   - Cleaned minor Phase 0 trailing whitespace in `plan.md`.
 - Tests/commands executed:
-  - `docker compose up -d` (PostgreSQL 17 container started and healthy)
-  - `python -m pytest tests -v` (15 passed, 0 skipped, 0 failed with live PostgreSQL container)
-  - `pip install -e .` (installed bankflow 0.1.0)
+  - `docker compose up -d` (PostgreSQL 17 container started and healthy on 127.0.0.1:5433)
+  - `python -m pytest tests -v` (22 passed, 0 skipped, 0 failed with live PostgreSQL container)
+  - `pip install -e ".[dev]"` (installed bankflow 0.1.0 with pytest)
   - `bankflow --help` (verified CLI options)
   - `bankflow generate --output-dir data/samples --seed 42 --transactions 100` (generated 4 clean CSV files)
   - `bankflow test-connection; bankflow test-connection --test-db` (verified connectivity to primary and test DBs)
@@ -95,12 +95,22 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - `bankflow stage --input-dir data/samples` (ingested 170 records into staging tables)
   - `bankflow batch-status <batch_id>` (verified batch state and record count audit)
   - `git diff --check` (clean, 0 whitespace errors)
-- Test outcomes: 15 passed, 0 skipped, 0 failed.
-- Acceptance evidence: Developer can launch local PostgreSQL with `docker compose up -d`, generate synthetic datasets, initialize staging schema, ingest staging data, inspect batch records, and run all 15 automated tests.
-- Review findings: None.
-- Fixes or accepted risks: Replaced CLI unicode symbols with ASCII tags (`[OK]`, `[ERROR]`) for Windows console compatibility. Configured port mapping in `docker-compose.yml` (`${BANKFLOW_DB_PORT:-5432}:5432`) to accommodate existing host services.
+- Test outcomes: 22 passed, 0 skipped, 0 failed.
+- Acceptance evidence: Developer can launch local PostgreSQL with `docker compose up -d` restricted to 127.0.0.1 loopback, generate synthetic datasets with date ranges, initialize staging schema, ingest staging data, inspect batch records, and run all 22 automated tests covering header validation, empty dataset contracts, duplicate defect scenarios, explicit batch registration, and failed-batch accounting.
+- Review findings: Phase 1 code review identified: loopback port binding requirement, HUMAN_SETUP.md step ordering and -v volume deletion precautions, staging header validation (extra/duplicate columns), empty-file contract (0 data rows vs 0 bytes), explicit batch-ID registration, test-database safety checks, failed-batch accounting, duplicate defect generation edge condition (idx=0), date-range validation, integration-test skip reporting, and URL config test completeness.
+- Fixes or accepted risks:
+  - Restricted Docker Compose port publishing to `127.0.0.1:${BANKFLOW_DB_PORT:-5432}:5432`.
+  - Reordered HUMAN_SETUP.md to configure `.env` before `docker compose up -d` and added warning against `docker compose down -v`.
+  - Added `RULE_FILE_HEADER_MISMATCH` and enforced strict header checks (detecting duplicate and unexpected extra columns).
+  - Enforced empty-file contract: both 0-byte files and headers-only datasets trigger `RULE_FILE_EMPTY`.
+  - Guaranteed `batch_id` registration in `monitoring.etl_batch_runs` whether auto-generated or explicitly supplied.
+  - Implemented accurate `records_extracted` and `records_staged` accounting in `update_batch_failure`.
+  - Fixed duplicate defect generation in `_inject_defects` to properly duplicate IDs even when `missing_txn_id_count == 0`.
+  - Added start/end date validation (`end_date >= start_date`) and added late-arriving event defect (scenario 15).
+  - Enhanced integration test skip message with exact connection error, and configured fail on CI / required runs.
+  - Rewrote URL config test with direct assertions on constructor, `from_url`, and `from_env`.
 - Known limitations: Dimensional warehouse loading and Phase 2 validation system are intentionally deferred to Phase 2 and Phase 3.
-- Next action: Submit Phase 1 for review; next phase is Phase 2 — Validation, Quarantine, and Data Contracts.
+- Next action: Submit Phase 1 review fixes for final approval; next phase is Phase 2 — Validation, Quarantine, and Data Contracts.
 
 ## Phase Entry Template
 

@@ -17,26 +17,36 @@ def test_database_config_defaults():
     assert "dbname=bankflow" in cfg.get_dsn()
 
 
-def test_database_config_from_url():
+def test_database_config_from_url(monkeypatch):
     url = "postgresql://myuser:mypass@dbhost:5433/bankflow_custom"
-    cfg = DatabaseConfig.from_env(url_var="CUSTOM_URL")
-    # Simulate url parsing directly
-    from urllib.parse import urlparse
-    parsed = urlparse(url)
-    cfg2 = DatabaseConfig(
-        host=parsed.hostname or "localhost",
-        port=parsed.port or 5432,
-        name=parsed.path.lstrip("/"),
-        user=parsed.username or "postgres",
-        password=parsed.password or "",
-        url=url,
-    )
-    assert cfg2.host == "dbhost"
-    assert cfg2.port == 5433
-    assert cfg2.name == "bankflow_custom"
-    assert cfg2.user == "myuser"
-    assert cfg2.password == "mypass"
-    assert cfg2.get_dsn() == url
+
+    # 1. Test direct constructor with url parameter (parsed via post_init)
+    cfg_direct = DatabaseConfig(url=url)
+    assert cfg_direct.host == "dbhost"
+    assert cfg_direct.port == 5433
+    assert cfg_direct.name == "bankflow_custom"
+    assert cfg_direct.user == "myuser"
+    assert cfg_direct.password == "mypass"
+    assert cfg_direct.get_dsn() == url
+
+    # 2. Test from_url class method
+    cfg_helper = DatabaseConfig.from_url(url)
+    assert cfg_helper.host == "dbhost"
+    assert cfg_helper.port == 5433
+    assert cfg_helper.name == "bankflow_custom"
+    assert cfg_helper.user == "myuser"
+    assert cfg_helper.password == "mypass"
+    assert cfg_helper.get_dsn() == url
+
+    # 3. Test from_env reading an actual environment variable
+    monkeypatch.setenv("TEST_APP_DB_URL", url)
+    cfg_env = DatabaseConfig.from_env(url_var="TEST_APP_DB_URL")
+    assert cfg_env.host == "dbhost"
+    assert cfg_env.port == 5433
+    assert cfg_env.name == "bankflow_custom"
+    assert cfg_env.user == "myuser"
+    assert cfg_env.password == "mypass"
+    assert cfg_env.get_dsn() == url
 
 
 def test_is_test_database_guard():

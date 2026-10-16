@@ -96,6 +96,39 @@ def test_defect_injection_scenarios():
     assert "-150.00" in amounts, "Amount rule violation defect not found"
     assert "IN_DISPUTE_UNKNOWN" in statuses, "Unsupported status defect not found"
     assert "TELEPATHY" in channels, "Unsupported channel defect not found"
+    # Verify late-arriving event defect (timestamp from 2025 prior to 2026-01-01 start_date)
+    has_prior_timestamp = any("2025-" in ts for ts in timestamps)
+    assert has_prior_timestamp, "Late-arriving transaction defect not found"
+
+
+def test_duplicate_defect_without_missing_txn_id():
+    """Verify duplicate defect is injected even when missing_txn_id_count is 0."""
+    dc = DefectConfig(enabled=True, missing_txn_id_count=0, duplicate_txn_id_count=2)
+    gen = SyntheticDataGenerator(seed=42, defect_config=dc)
+    customers = gen.generate_customers(2)
+    branches = gen.generate_branches(2)
+    accounts = gen.generate_accounts(customers, branches, 2)
+    txns = gen.generate_transactions(accounts, 10)
+    txn_ids = [t["transaction_id"] for t in txns]
+
+    assert "" not in txn_ids
+    assert len(txn_ids) != len(set(txn_ids))
+
+
+def test_date_range_validation():
+    """Verify ValueError is raised when end_date is before start_date."""
+    gen = SyntheticDataGenerator(seed=42)
+    import pytest
+
+    with pytest.raises(ValueError, match="cannot be before start_date"):
+        gen.generate_customers(count=5, start_date="2026-01-01", end_date="2025-01-01")
+
+    customers = gen.generate_customers(2)
+    branches = gen.generate_branches(2)
+    accounts = gen.generate_accounts(customers, branches, 2)
+
+    with pytest.raises(ValueError, match="cannot be before start_date"):
+        gen.generate_transactions(accounts, 10, start_date="2026-05-01", end_date="2026-01-01")
 
 
 def test_export_all_creates_valid_csvs(tmp_path: Path):

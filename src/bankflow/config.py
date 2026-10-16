@@ -26,20 +26,39 @@ class DatabaseConfig:
     password: str = ""
     url: Optional[str] = None
 
+    def __post_init__(self) -> None:
+        if self.url:
+            parsed = urlparse(self.url)
+            if parsed.hostname:
+                object.__setattr__(self, "host", parsed.hostname)
+            if parsed.port:
+                object.__setattr__(self, "port", parsed.port)
+            if parsed.path.lstrip("/"):
+                object.__setattr__(self, "name", parsed.path.lstrip("/"))
+            if parsed.username:
+                object.__setattr__(self, "user", parsed.username)
+            if parsed.password:
+                object.__setattr__(self, "password", parsed.password)
+
+    @classmethod
+    def from_url(cls, url: str) -> DatabaseConfig:
+        """Construct from a connection URL."""
+        parsed = urlparse(url)
+        return cls(
+            host=parsed.hostname or "localhost",
+            port=parsed.port or 5432,
+            name=parsed.path.lstrip("/") or "bankflow",
+            user=parsed.username or "postgres",
+            password=parsed.password or "",
+            url=url,
+        )
+
     @classmethod
     def from_env(cls, prefix: str = "BANKFLOW_DB_", url_var: Optional[str] = "DATABASE_URL") -> DatabaseConfig:
         """Construct from environment variables, preferring URL if provided."""
         url = os.getenv(url_var) if url_var else None
         if url:
-            parsed = urlparse(url)
-            return cls(
-                host=parsed.hostname or "localhost",
-                port=parsed.port or 5432,
-                name=parsed.path.lstrip("/") or "bankflow",
-                user=parsed.username or "postgres",
-                password=parsed.password or "",
-                url=url,
-            )
+            return cls.from_url(url)
 
         host = os.getenv(f"{prefix}HOST", "localhost")
         port_raw = os.getenv(f"{prefix}PORT", "5432")
@@ -78,9 +97,11 @@ class DatabaseConfig:
     def is_test_database(self) -> bool:
         """
         Guardrail check to ensure destructive teardowns only target dedicated test databases.
-        Must end with '_test' or contain 'test'.
+        Must end with '_test' or contain 'test', and cannot be a production database.
         """
         lower_name = self.name.lower()
+        if lower_name in {"bankflow", "postgres", "production", "prod", "warehouse", "master"}:
+            return False
         return lower_name.endswith("_test") or "test" in lower_name
 
     def assert_safe_for_reset(self) -> None:

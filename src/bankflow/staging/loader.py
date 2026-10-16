@@ -26,6 +26,7 @@ from bankflow.constants import (
     CUSTOMERS_COLUMNS,
     ENTITY_SCHEMAS,
     RULE_FILE_EMPTY,
+    RULE_FILE_HEADER_MISMATCH,
     RULE_FILE_REQUIRED_COLUMN_MISSING,
     RULE_FILE_UNREADABLE,
     TRANSACTIONS_COLUMNS,
@@ -63,19 +64,31 @@ class StagingLoader:
         self.conn.commit()
         return batch_id
 
-    def update_batch_failure(self, batch_id: str, error_code: str, error_message: str) -> None:
-        """Mark a batch as failed with error summary."""
+    def update_batch_failure(
+        self,
+        batch_id: str,
+        error_code: str,
+        error_message: str,
+        records_extracted: int = 0,
+        records_staged: int = 0,
+    ) -> None:
+        """Mark a batch as failed with error summary and accurate record accounting."""
         now = datetime.now(timezone.utc)
         error_summary = f"{error_code}: {error_message}"
         query = """
         UPDATE monitoring.etl_batch_runs
         SET status = %s,
             completed_at = %s,
+            records_extracted = %s,
+            records_staged = %s,
             error_summary = %s
         WHERE batch_id = %s;
         """
         with self.conn.cursor() as cur:
-            cur.execute(query, (BATCH_STATUS_FAILED, now, error_summary, batch_id))
+            cur.execute(
+                query,
+                (BATCH_STATUS_FAILED, now, records_extracted, records_staged, error_summary, batch_id),
+            )
         self.conn.commit()
 
     def update_batch_success(
@@ -103,7 +116,8 @@ class StagingLoader:
 
     def validate_file_structure(self, file_path: Path, expected_columns: List[str]) -> Tuple[List[str], int]:
         """
-        Verify that file exists, is valid UTF-8, and headers strictly match expected columns.
+        Verify that file exists, is valid UTF-8, headers strictly match expected columns,
+        and contains non-empty data rows.
         Returns (headers, data_row_count).
         Raises StagingError on violation.
         """
@@ -116,9 +130,18 @@ class StagingLoader:
                 try:
                     header_row = next(reader)
                 except StopIteration:
-                    raise StagingError(RULE_FILE_EMPTY, f"File is empty (no headers): {file_path}")
+                    raise StagingError(RULE_FILE_EMPTY, f"File is empty (no headers): {file_path.name}")
 
-                cleaned_headers = [col.strip() for col in header_row]
+                cleaned_headers = [col.strip() for col in header_row if col is not None]
+                if not cleaned_headers:
+                    raise StagingError(RULE_FILE_EMPTY, f"File contains empty header row: {file_path.name}")
+
+                # Check for duplicate headers
+                if len(cleaned_headers) != len(set(cleaned_headers)):
+                    raise StagingError(
+                        RULE_FILE_HEADER_MISMATCH,
+                        f"Duplicate columns in header row for {file_path.name}: {cleaned_headers}",
+                    )
 
                 # Verify all expected columns are present
                 missing_cols = [col for col in expected_columns if col not in cleaned_headers]
@@ -128,8 +151,22 @@ class StagingLoader:
                         f"Missing required columns in {file_path.name}: {missing_cols}. Found: {cleaned_headers}",
                     )
 
-                # Count rows
+                # Verify no unexpected extra columns
+                unexpected_cols = [col for col in cleaned_headers if col not in expected_columns]
+                if unexpected_cols:
+                    raise StagingError(
+                        RULE_FILE_HEADER_MISMATCH,
+                        f"Unexpected columns in {file_path.name}: {unexpected_cols}. Expected: {expected_columns}",
+                    )
+
+                # Count rows and enforce non-empty dataset contract
                 data_rows = sum(1 for _ in reader)
+                if data_rows == 0:
+                    raise StagingError(
+                        RULE_FILE_EMPTY,
+                        f"File contains headers but zero data rows (empty dataset): {file_path.name}",
+                    )
+
                 return cleaned_headers, data_rows
 
         except UnicodeDecodeError as ex:
@@ -281,8 +318,8 @@ class StagingLoader:
         branches -> customers -> accounts -> transactions.
         Registers the batch, validates each file, ingests into staging, and records outcome.
         """
-        if not batch_id:
-            batch_id = self.register_batch(source_name=str(data_dir))
+        # Always register the batch in monitoring, whether batch_id is auto-generated or explicitly provided
+        batch_id = self.register_batch(source_name=str(data_dir), batch_id=batch_id)
 
         total_extracted = 0
         total_staged = 0
@@ -317,7 +354,13 @@ class StagingLoader:
             }
 
         except StagingError as err:
-            self.update_batch_failure(batch_id, err.rule_code, err.message)
+            self.update_batch_failure(
+                batch_id,
+                err.rule_code,
+                err.message,
+                records_extracted=total_extracted,
+                records_staged=total_staged,
+            )
             return {
                 "batch_id": batch_id,
                 "status": BATCH_STATUS_FAILED,
@@ -328,5 +371,11 @@ class StagingLoader:
                 "entity_counts": entity_counts,
             }
         except Exception as ex:
-            self.update_batch_failure(batch_id, "UNEXPECTED_ERROR", str(ex))
+            self.update_batch_failure(
+                batch_id,
+                "UNEXPECTED_ERROR",
+                str(ex),
+                records_extracted=total_extracted,
+                records_staged=total_staged,
+            )
             raise

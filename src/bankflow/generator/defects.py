@@ -24,6 +24,7 @@ class DefectConfig:
     amount_rule_violation_count: int = 0
     unsupported_status_count: int = 0
     unsupported_channel_count: int = 0
+    late_arriving_count: int = 0
     corrupt_header: bool = False
     empty_file: bool = False
 
@@ -49,6 +50,7 @@ class DefectConfig:
             amount_rule_violation_count=1,
             unsupported_status_count=1,
             unsupported_channel_count=1,
+            late_arriving_count=1,
             corrupt_header=False,
             empty_file=False,
         )

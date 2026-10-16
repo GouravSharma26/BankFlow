@@ -8,9 +8,9 @@ services:
       POSTGRES_PASSWORD: ${BANKFLOW_DB_PASSWORD:-postgres}
       POSTGRES_DB: ${BANKFLOW_DB_NAME:-bankflow}
     ports:
-      # Defaults to host port 5432. If 5432 is in use by a local Windows service,
+      # Restrict to localhost loopback for security. If 5432 is in use by a local Windows service,
       # set BANKFLOW_DB_PORT=5433 in .env to map to 5433 on your host.
-      - "${BANKFLOW_DB_PORT:-5432}:5432"
+      - "127.0.0.1:${BANKFLOW_DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/01-init-test-db.sql:/docker-entrypoint-initdb.d/01-init-test-db.sql:ro

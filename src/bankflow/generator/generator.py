@@ -82,6 +82,8 @@ class SyntheticDataGenerator:
         """Generate synthetic customers with opaque identifiers."""
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
         end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+        if end_dt < start_dt:
+            raise ValueError(f"Customer end_date ({end_date}) cannot be before start_date ({start_date})")
         total_days = (end_dt - start_dt).days
 
         segments = [SEGMENT_RETAIL, SEGMENT_PREMIUM, SEGMENT_SMALL_BUSINESS]
@@ -156,6 +158,8 @@ class SyntheticDataGenerator:
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if end_dt < start_dt:
+            raise ValueError(f"Transaction end_date ({end_date}) cannot be before start_date ({start_date})")
         total_seconds = int((end_dt - start_dt).total_seconds())
 
         types = [TYPE_DEPOSIT, TYPE_WITHDRAWAL, TYPE_TRANSFER, TYPE_PAYMENT, TYPE_FEE]
@@ -212,11 +216,16 @@ class SyntheticDataGenerator:
 
         # Inject controlled defect scenarios if enabled
         if self.defect_config.enabled and transactions:
-            self._inject_defects(transactions, accounts)
+            self._inject_defects(transactions, accounts, start_dt)
 
         return transactions
 
-    def _inject_defects(self, txns: List[Dict[str, str]], accounts: List[Dict[str, str]]) -> None:
+    def _inject_defects(
+        self,
+        txns: List[Dict[str, str]],
+        accounts: List[Dict[str, str]],
+        start_dt: datetime,
+    ) -> None:
         """Inject defects into transaction rows according to DefectConfig."""
         dc = self.defect_config
         idx = 0
@@ -227,10 +236,11 @@ class SyntheticDataGenerator:
                 txns[idx]["transaction_id"] = ""
                 idx += 1
 
-        # 2. Duplicate event ID
+        # 2. Duplicate event ID (works even if idx == 0)
         for _ in range(dc.duplicate_txn_id_count):
-            if idx < len(txns) and idx > 0:
-                txns[idx]["transaction_id"] = txns[0]["transaction_id"]
+            if idx < len(txns) and len(txns) > 1:
+                source_idx = 0 if idx > 0 else 1
+                txns[idx]["transaction_id"] = txns[source_idx]["transaction_id"]
                 idx += 1
 
         # 3. Missing account ID
@@ -294,6 +304,13 @@ class SyntheticDataGenerator:
                 txns[idx]["channel"] = "TELEPATHY"
                 idx += 1
 
+        # 13. Late-arriving transaction from a prior event date
+        for _ in range(dc.late_arriving_count):
+            if idx < len(txns):
+                prior_ts = start_dt - timedelta(days=60)
+                txns[idx]["transaction_timestamp"] = prior_ts.isoformat()
+                idx += 1
+
     def export_all(
         self,
         output_dir: Path,
@@ -301,6 +318,8 @@ class SyntheticDataGenerator:
         num_customers: int = 25,
         num_accounts: int = 40,
         num_transactions: int = 100,
+        start_date: str = "2026-01-01",
+        end_date: str = "2026-03-31",
     ) -> Dict[str, Path]:
         """Generate full synthetic dataset and save to CSV files."""
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -308,7 +327,12 @@ class SyntheticDataGenerator:
         branches = self.generate_branches(num_branches)
         customers = self.generate_customers(num_customers)
         accounts = self.generate_accounts(customers, branches, num_accounts)
-        transactions = self.generate_transactions(accounts, num_transactions)
+        transactions = self.generate_transactions(
+            accounts,
+            num_transactions,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         files = {
             "branches": output_dir / "branches.csv",
