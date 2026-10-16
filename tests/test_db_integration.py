@@ -4,6 +4,7 @@ Runs against the dedicated test database when configured and reachable.
 """
 
 import os
+import uuid
 from pathlib import Path
 from typing import Tuple
 
@@ -112,7 +113,7 @@ def test_staging_with_explicit_batch_id(clean_dataset_dir: Path):
         pytest.skip(f"Dedicated test database '{test_db.name}' is not accessible: {err_msg}")
 
     test_db.assert_safe_for_reset()
-    custom_batch_id = "test_custom_batch_2026_01"
+    custom_batch_id = f"test_custom_{uuid.uuid4().hex[:8]}"
 
     with get_connection(test_db) as conn:
         init_staging_schema(conn)
@@ -159,7 +160,7 @@ def test_staging_failed_batch_accounting(tmp_path: Path):
     # Valid transactions
     (bad_dir / "transactions.csv").write_text("transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\nTX-01,ACC-01,DEPOSIT,100.00,USD,2026-01-01T12:00:00+00:00,COMPLETED,ONLINE,,CORE\n", encoding="utf-8")
 
-    fail_batch_id = "test_fail_batch_accounting"
+    fail_batch_id = f"test_fail_{uuid.uuid4().hex[:8]}"
     with get_connection(test_db) as conn:
         init_staging_schema(conn)
         loader = StagingLoader(conn)
