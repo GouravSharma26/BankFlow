@@ -310,9 +310,9 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED LOCALLY
 - Date: 2026-10-16
 - Branch: phase/3-warehouse-loading
-- Commit SHA: 3b5b262
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/3b5b262>
-- Push status: PENDING_PUSH
+- Commit SHA: 3b5b262 (Implementation) / 10cd29b (Documentation)
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/3-warehouse-loading>
+- Push status: Pushed successfully to origin/phase/3-warehouse-loading
 - Objective: Load valid staging records to a dimensional PostgreSQL warehouse safely, enforce database-level idempotency, implement strict transactional loading, record replay skips as informational issues, and verify count and grouped-currency value reconciliation.
 - Changes delivered:
   - `sql/03_warehouse_schema.sql` and `src/bankflow/warehouse/schema.py`:
