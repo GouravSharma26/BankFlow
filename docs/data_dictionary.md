@@ -160,9 +160,51 @@ Purpose/grain: one accepted transaction event under the defined source event ide
 | `raw_payload` | `JSONB` | Yes | None | JSON serialization | Complete raw CSV row snapshot |
 | `ingested_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Ingestion timestamp |
 
-## 4. Fact Table Measurement Rules
+## 4. Implemented Database Tables & Views (Phase 2)
+
+### 4.1 `monitoring.data_quality_issues`
+- **Schema / Table:** `monitoring.data_quality_issues`
+- **Purpose / Grain:** One row per detected rule violation or warning. Supports multi-issue recording per staged row.
+- **Keys / Constraints:** PK (`issue_id`), FK (`batch_id` -> `monitoring.etl_batch_runs(batch_id)` ON DELETE CASCADE), Indexes on `batch_id`, `rule_code`, `severity`, `source_row_id`.
+
+| Column | PostgreSQL type | Nullable? | Key/constraint | Source / derivation | Meaning |
+|---|---|---|---|---|---|
+| `issue_id` | `VARCHAR(64)` | No | PK | Generated UUID hex | Unique issue identifier |
+| `batch_id` | `VARCHAR(64)` | No | FK, Index | `monitoring.etl_batch_runs` | Lineage batch identifier |
+| `entity_type` | `VARCHAR(32)` | No | None | Staged entity name | Entity domain (TRANSACTION, ACCOUNT, CUSTOMER, BRANCH) |
+| `source_row_id` | `BIGINT` | Yes | Index | Staging table PK | Staging row identifier (nullable for file-level issues) |
+| `source_row_number` | `INT` | No | None | CSV row index | 1-based source row number (0 for file-level issues) |
+| `source_file` | `VARCHAR(255)` | No | None | Staging lineage | Source CSV filename |
+| `rule_code` | `VARCHAR(64)` | No | Index | Validator constant | Stable, machine-readable rule code |
+| `severity` | `VARCHAR(16)` | No | Index | Severity constant | Severity level (ERROR, WARNING, INFO) |
+| `reason` | `TEXT` | No | None | Diagnostic explanation | Human-readable explanation of the defect |
+| `disposition` | `VARCHAR(32)` | No | None | Disposition constant | Final row disposition (ACCEPTED, REJECTED, WARNED, SKIPPED) |
+| `detected_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Detection timestamp |
+
+### 4.2 `quarantine.quarantined_records`
+- **Schema / Table:** `quarantine.quarantined_records`
+- **Purpose / Grain:** One row per rejected source row. Traceable directly to staging without duplicating raw source data.
+- **Keys / Constraints:** PK (`quarantine_id`), FK (`batch_id` -> `monitoring.etl_batch_runs(batch_id)` ON DELETE CASCADE), Indexes on `batch_id`, `source_row_id`, `primary_rule_code`.
+
+| Column | PostgreSQL type | Nullable? | Key/constraint | Source / derivation | Meaning |
+|---|---|---|---|---|---|
+| `quarantine_id` | `VARCHAR(64)` | No | PK | Generated UUID hex | Unique quarantine identifier |
+| `batch_id` | `VARCHAR(64)` | No | FK, Index | `monitoring.etl_batch_runs` | Lineage batch identifier |
+| `entity_type` | `VARCHAR(32)` | No | None | Staged entity name | Entity domain (TRANSACTION, ACCOUNT, etc.) |
+| `source_row_id` | `BIGINT` | No | Index | Staging table PK | Relational reference to raw staging record |
+| `source_row_number` | `INT` | No | None | CSV row index | Lineage row number in source file |
+| `source_file` | `VARCHAR(255)` | No | None | Staging lineage | Source CSV filename |
+| `primary_rule_code` | `VARCHAR(64)` | No | Index | First fatal rule code | Primary rule code responsible for quarantine |
+| `issue_count` | `INT` | No | Default 1 | Total issues count | Number of discrete issues detected on this row |
+| `quarantined_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Quarantine insertion timestamp |
+
+### 4.3 `quarantine.vw_quarantined_transactions`
+- **Schema / View:** `quarantine.vw_quarantined_transactions`
+- **Purpose / Grain:** Diagnostic view joining `quarantine.quarantined_records` with `staging.stg_transactions` on `source_row_id`. Exposes the full original raw payload, raw amounts, raw timestamps, and metadata without physical data duplication.
+
+## 5. Warehouse Dimensions and Facts (Phase 3+)
 ... (to be populated in Phase 3)
 
-## 5. Change Control
+## 6. Change Control
 
 Every schema change should update the SQL initialization/migration, data-access code, tests, and this dictionary. A phase is not complete if the database schema and dictionary disagree.

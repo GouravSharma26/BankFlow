@@ -17,6 +17,8 @@ from bankflow.generator.defects import DefectConfig
 from bankflow.generator.generator import SyntheticDataGenerator
 from bankflow.staging.loader import StagingLoader
 from bankflow.staging.schema import init_staging_schema
+from bankflow.validation.schema import init_validation_schema
+from bankflow.validation.validator import ValidationEngine
 
 
 @click.group()
@@ -46,7 +48,7 @@ def test_conn_cmd(test_db: bool):
 @cli.command("init-db")
 @click.option("--test-db", is_flag=True, help="Initialize the dedicated test database instead of primary.")
 def init_db_cmd(test_db: bool):
-    """Initialize PostgreSQL staging and monitoring schemas and tables."""
+    """Initialize PostgreSQL staging, monitoring, and quarantine schemas and tables."""
     settings = get_settings()
     db_config = settings.test_db if test_db else settings.db
     target_type = "test" if test_db else "primary"
@@ -55,9 +57,11 @@ def init_db_cmd(test_db: bool):
     try:
         with get_connection(db_config) as conn:
             init_staging_schema(conn)
-        click.secho(f"[OK] Successfully initialized staging and monitoring schemas in '{db_config.name}'.", fg="green")
+            init_validation_schema(conn)
+        click.secho(f"[OK] Successfully initialized staging, monitoring, and quarantine schemas in '{db_config.name}'.", fg="green")
     except Exception as ex:
         click.secho(f"[ERROR] Database initialization failed: {ex}", fg="red")
+        sys.exit(1)
         sys.exit(1)
 
 
@@ -116,8 +120,9 @@ def generate_cmd(
 @cli.command("stage")
 @click.option("--input-dir", "-i", default="data/samples", show_default=True, type=click.Path(exists=True, path_type=Path), help="Directory containing CSV files.")
 @click.option("--batch-id", help="Optional explicit batch identifier.")
+@click.option("--validate", is_flag=True, help="Automatically run validation immediately after staging.")
 @click.option("--test-db", is_flag=True, help="Ingest into the test database instead of primary.")
-def stage_cmd(input_dir: Path, batch_id: Optional[str], test_db: bool):
+def stage_cmd(input_dir: Path, batch_id: Optional[str], validate: bool, test_db: bool):
     """Ingest CSV files from a dataset directory into PostgreSQL staging tables."""
     settings = get_settings()
     db_config = settings.test_db if test_db else settings.db
@@ -129,17 +134,59 @@ def stage_cmd(input_dir: Path, batch_id: Optional[str], test_db: bool):
             result = loader.ingest_dataset_directory(input_dir, batch_id=batch_id)
 
             if result["status"] == "SUCCEEDED":
-                click.secho(f"[OK] Batch '{result['batch_id']}' succeeded!", fg="green")
+                b_id = result["batch_id"]
+                click.secho(f"[OK] Batch '{b_id}' staging succeeded!", fg="green")
                 click.echo(f"  Extracted records: {result['records_extracted']}")
                 click.echo(f"  Staged records:    {result['records_staged']}")
                 for entity, count in result.get("entity_counts", {}).items():
                     click.echo(f"    - {entity}: {count}")
+
+                if validate:
+                    click.echo(f"\nRunning validation engine on batch '{b_id}'...")
+                    engine = ValidationEngine(conn)
+                    summary = engine.validate_batch(b_id)
+                    status_color = "green" if summary.batch_status == "SUCCEEDED" else "yellow"
+                    click.secho(f"[{summary.batch_status}] Validation complete for batch '{b_id}'", fg=status_color)
+                    click.echo(f"  Evaluated: {summary.records_evaluated} | Valid: {summary.records_valid} | Rejected: {summary.records_rejected}")
+                    if summary.issues_by_rule:
+                        click.echo("  Issues by rule:")
+                        for r_code, r_cnt in sorted(summary.issues_by_rule.items()):
+                            click.echo(f"    - {r_code}: {r_cnt}")
             else:
                 click.secho(f"[ERROR] Batch '{result['batch_id']}' failed: [{result.get('error_code')}] {result.get('error_message')}", fg="red")
                 sys.exit(1)
 
     except Exception as ex:
         click.secho(f"[ERROR] Staging ingestion failed: {ex}", fg="red")
+        sys.exit(1)
+
+
+@cli.command("validate")
+@click.argument("batch_id")
+@click.option("--test-db", is_flag=True, help="Validate batch in test database instead of primary.")
+def validate_cmd(batch_id: str, test_db: bool):
+    """Validate staged records for a batch, record data-quality issues, and quarantine rejected rows."""
+    settings = get_settings()
+    db_config = settings.test_db if test_db else settings.db
+
+    try:
+        with get_connection(db_config) as conn:
+            engine = ValidationEngine(conn)
+            click.echo(f"Validating staged records for batch '{batch_id}'...")
+            summary = engine.validate_batch(batch_id)
+
+            status_color = "green" if summary.batch_status == "SUCCEEDED" else "yellow"
+            click.secho(f"[{summary.batch_status}] Validation completed for batch '{batch_id}'", fg=status_color)
+            click.echo(f"  Records evaluated: {summary.records_evaluated}")
+            click.echo(f"  Records valid:     {summary.records_valid}")
+            click.echo(f"  Records rejected:  {summary.records_rejected}")
+            click.echo(f"  Total issues:      {summary.total_issues_count}")
+            if summary.issues_by_rule:
+                click.echo("  Issues by rule code:")
+                for rule, count in sorted(summary.issues_by_rule.items()):
+                    click.echo(f"    - {rule}: {count}")
+    except Exception as ex:
+        click.secho(f"[ERROR] Validation failed: {ex}", fg="red")
         sys.exit(1)
 
 
@@ -156,7 +203,8 @@ def batch_status_cmd(batch_id: str, test_db: bool):
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT batch_id, source_name, started_at, completed_at, status,
-                           records_extracted, records_staged, error_summary
+                           records_extracted, records_staged, records_valid, records_rejected,
+                           error_summary
                     FROM monitoring.etl_batch_runs
                     WHERE batch_id = %s;
                 """, (batch_id,))
@@ -170,12 +218,25 @@ def batch_status_cmd(batch_id: str, test_db: bool):
                 click.echo(f"Source:             {row[1]}")
                 click.echo(f"Started:            {row[2]}")
                 click.echo(f"Completed:          {row[3]}")
-                status_color = "green" if row[4] == "SUCCEEDED" else "red"
+                status_color = "green" if row[4] == "SUCCEEDED" else "yellow" if row[4] == "SUCCEEDED_WITH_REJECTIONS" else "red"
                 click.secho(f"Status:             {row[4]}", fg=status_color)
                 click.echo(f"Records Extracted:  {row[5]}")
                 click.echo(f"Records Staged:     {row[6]}")
-                if row[7]:
-                    click.echo(f"Error Summary:      {row[7]}")
+                click.echo(f"Records Valid:      {row[7]}")
+                click.echo(f"Records Rejected:   {row[8]}")
+                if row[9]:
+                    click.echo(f"Error Summary:      {row[9]}")
+
+                # Query issue count from monitoring.data_quality_issues
+                cur.execute("""
+                    SELECT count(*), count(DISTINCT source_row_id)
+                    FROM monitoring.data_quality_issues
+                    WHERE batch_id = %s;
+                """, (batch_id,))
+                issue_stats = cur.fetchone()
+                if issue_stats and issue_stats[0] > 0:
+                    click.echo(f"Quality Issues:     {issue_stats[0]} issues across {issue_stats[1]} distinct rows")
+
     except Exception as ex:
         click.secho(f"[ERROR] Query failed: {ex}", fg="red")
         sys.exit(1)

@@ -100,6 +100,7 @@ Prefer PostgreSQL schemas such as:
 
 - `staging` — raw values and source lineage.
 - `monitoring` — ETL batch runs and data quality issues.
+- `quarantine` — quarantined records and relational views linking back to raw staging without data duplication.
 - `warehouse` — dimensions and fact table.
 - `reporting` — views intended for analytics/dashboard usage.
 

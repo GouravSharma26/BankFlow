@@ -4,12 +4,12 @@
 
 ## Current Status
 
-- Overall status: `PHASE 1 VERIFIED`
-- Current phase: `Phase 1 — Python Foundation, Synthetic Generator, and Staging` (Review fixes complete)
-- Last verified implementation phase: `Phase 1 — Python Foundation, Synthetic Generator, and Staging`
+- Overall status: `PHASE 2 VERIFIED`
+- Current phase: `Phase 2 — Validation, Quarantine, and Data Contracts`
+- Last verified implementation phase: `Phase 2 — Validation, Quarantine, and Data Contracts`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
-- Baseline commit: `b863ee1`
-- Last reviewed commit: `4f63c0d`
+- Baseline commit: `cc2b371`
+- Last reviewed commit: `cc2b371`
 
 ## How to Maintain This File
 
@@ -178,6 +178,56 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Fixes or accepted risks: None.
 - Known limitations: Phase 2 validation and quarantine engine, Phase 3 dimensional warehouse, Phase 4 analytics, and Phase 5 dashboard are planned future phases.
 - Next action: Submit Phase 1 review fixes for final review.
+
+### Phase 2 — Validation, Quarantine, and Data Contracts
+
+- Status: VERIFIED
+- Date: 2026-10-16
+- Branch: phase/2-validation-quarantine
+- Commit SHA: 4a329b8
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/2-validation-quarantine>
+- Push status: Ready for push
+- Objective: Build a deterministic validation engine that processes staged source records, assigns stable rule codes, quarantines invalid records, and accounts for the disposition of every processed row while preserving raw staging data without in-place mutation.
+- Changes delivered:
+  - Database Schema (`sql/02_validation_quarantine_schema.sql` and `src/bankflow/validation/schema.py`):
+    - `monitoring.data_quality_issues`: tracks issue ID, batch ID, entity type, source row ID/number, filename, stable rule code, severity (ERROR, WARNING, INFO), reason, and disposition with foreign keys and performance indexes.
+    - `quarantine.quarantined_records`: captures quarantine ID, batch ID, entity type, source row ID, primary rule code, issue count, and timestamp. References staging row without duplicating raw data.
+    - `quarantine.vw_quarantined_transactions`: relational view joining quarantine with `staging.stg_transactions` for instant diagnostic queryability.
+  - Data Models (`src/bankflow/validation/models.py`):
+    - `ValidationIssue`: typed representation with DB tuple serialization.
+    - `RowValidationOutcome`: properties `is_rejected`, `has_warnings`, and `disposition`.
+    - `BatchValidationSummary`: accounts for `records_evaluated`, `records_valid`, `records_rejected`, `records_warned`, `records_skipped`, and `total_issues_count`.
+  - Validation Engine (`src/bankflow/validation/validator.py`):
+    - Validates entities in relational reference order (`branches` -> `customers` -> `accounts` -> `transactions`).
+    - Enforces stable rule codes: `TXN_ID_MISSING`, `TXN_ID_DUPLICATE`, `ACCOUNT_ID_MISSING`, `ACCOUNT_NOT_FOUND`, `AMOUNT_MISSING`, `AMOUNT_PARSE_ERROR`, `AMOUNT_RULE_VIOLATION`, `TIMESTAMP_PARSE_ERROR`, `TYPE_UNSUPPORTED`, `STATUS_UNSUPPORTED`, `CHANNEL_UNSUPPORTED`, `CURRENCY_MISSING`, `CURRENCY_UNSUPPORTED`, etc.
+    - Uses Python `Decimal` for amount validation, rejecting non-finite values (NaN/Inf) and enforcing `> 0.00`.
+    - Uses ISO 8601 with explicit timezone-aware parsing for timestamps.
+    - Preserves late-arriving past events as valid events per explicit documented policy.
+    - Records all detectable issues per row without inflating `records_rejected` (1 row with N issues = 1 rejected row).
+    - Guarantees validation idempotency: clears existing batch issues/quarantine before re-evaluation within a database transaction.
+    - Updates `monitoring.etl_batch_runs` with `records_valid`, `records_rejected`, and status (`SUCCEEDED` or `SUCCEEDED_WITH_REJECTIONS`).
+  - CLI Integration (`src/bankflow/__main__.py`):
+    - Added `bankflow validate <batch_id> [--test-db]`.
+    - Enhanced `bankflow stage` with `--validate` flag for immediate validation.
+    - Updated `bankflow batch-status` to report `records_valid`, `records_rejected`, and total quality issues.
+  - Test Suite (`tests/test_validation.py` and `tests/test_validation_integration.py`):
+    - Unit tests: single/multi-issue row outcomes, accounting invariants, amount Decimal checks, timestamp timezone parsing, and individual rule tests for branches, customers, accounts, transactions.
+    - Live PostgreSQL integration tests against `bankflow_test`: clean batch validation (0 rejections), defective batch quarantine with exact rule codes, validation idempotency, view verification, and CLI invocation.
+  - Documentation:
+    - Updated `docs/data_quality_rules.md`, `docs/data_contract.md`, `docs/data_dictionary.md`, `docs/architecture.md`, and `docs/design_decisions.md` (TD-016 and TD-017).
+- Tests/commands executed:
+  - `python -m pytest tests -v` (39 passed, 0 skipped, 0 failed in 56s against live PostgreSQL `bankflow_test`)
+  - `git diff --check`
+- Test outcomes: 39 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - 39 automated tests pass with 0 skips against dedicated PostgreSQL `bankflow_test`.
+  - Batch accounting invariant `records_evaluated = records_valid + records_rejected` verified on clean and defective datasets.
+  - Quarantined records verified joinable via `quarantine.vw_quarantined_transactions` with raw staging payloads preserved intact.
+  - Re-running validation on the same batch produces identical counts without duplicate records.
+- Review findings: None.
+- Fixes or accepted risks: None.
+- Known limitations: Phase 3 dimensional warehouse (`dim_*`, `fact_transactions`), warehouse loading, idempotency/replay against fact tables, and analytics reports are Phase 3/4 scope.
+- Next action: Submit Phase 2 for review on branch `phase/2-validation-quarantine`; next phase is Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation.
 
 ## Phase Entry Template
 

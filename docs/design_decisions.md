@@ -88,3 +88,27 @@ Append entries below rather than silently changing an existing decision.
 - Rationale: Gives an instant, repeatable, reproducible local database environment for both the primary warehouse (`bankflow`) and the test database (`bankflow_test`), with configurable port mapping to avoid host collisions.
 - Consequences / trade-offs: Requires Docker Desktop or Docker engine, but developers without Docker can still point to any existing PostgreSQL instance via `.env`.
 - Verification or evidence: `docker compose config` validates cleanly. Container startup and healthchecks verified.
+
+### TD-016 — Multi-Issue Recording with Row-Level Accounting Invariant
+- Date / phase: 2026-10-16 / Phase 2
+- Status: Accepted
+- Context: A staged row can have multiple distinct defects (e.g., missing transaction ID, invalid amount, and unsupported status). The validator needs to decide whether to stop at the first fatal error or record all detectable defects, and how to account for the row in batch statistics.
+- Options considered:
+  1. Fail-fast per row: stop evaluating a row upon encountering the first error. Simpler, but conceals downstream defects, forcing multiple repair/re-ingest cycles.
+  2. Multi-issue recording per row with strict row accounting: record all detected issues in `monitoring.data_quality_issues`, but count the row as exactly one rejected row in `records_rejected`.
+- Decision: Adopt multi-issue recording per row with strict row accounting (`records_evaluated = records_valid + records_rejected`).
+- Rationale: Upstream data engineers and reviewers get a complete, immediate diagnostic picture of all issues on a rejected row, while reconciling batch counts remains mathematically consistent without double-counting.
+- Consequences / trade-offs: `total_issues_count` can exceed `records_rejected`. Documented as distinct metrics in `monitoring.data_quality_issues` vs `monitoring.etl_batch_runs`.
+- Verification or evidence: Verified in `tests/test_validation.py::test_batch_validation_summary_accounting` and `tests/test_validation_integration.py::test_defective_dataset_validation_and_quarantine`.
+
+### TD-017 — Traceable Quarantine via Foreign Key Reference Without Staging Duplication
+- Date / phase: 2026-10-16 / Phase 2
+- Status: Accepted
+- Context: Quarantined records must remain traceable to the original staged source row (preserving raw payloads, whitespace, and surplus fields) without bloating the database by duplicating large text/payloads.
+- Options considered:
+  1. Duplicate copy: copy the complete raw payload and columns into a dedicated `quarantine.quarantined_transactions` table. Causes double storage and risks drift.
+  2. Foreign-key reference + diagnostic view: store quarantine metadata (`quarantine_id`, `batch_id`, `source_row_id`, `primary_rule_code`, `issue_count`) in `quarantine.quarantined_records`, referencing `source_row_id` in staging. Provide a relational view `quarantine.vw_quarantined_transactions` joining to `staging.stg_transactions`.
+- Decision: Adopt foreign-key reference with a diagnostic relational view (`quarantine.vw_quarantined_transactions`).
+- Rationale: Zero raw data duplication, full relational integrity (`ON DELETE CASCADE` on batch), instant access to original raw values, and full traceability.
+- Consequences / trade-offs: Quarantined rows depend on `staging.stg_transactions` remaining intact during the lifecycle of the batch.
+- Verification or evidence: Verified in `tests/test_validation_integration.py::test_defective_dataset_validation_and_quarantine`.

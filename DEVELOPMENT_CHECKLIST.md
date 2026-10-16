@@ -41,16 +41,16 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Goal:** Make accepted/rejected outcomes explicit and reproducible.
 
-- [ ] Implement stable validation rule codes.
-- [ ] Validate required fields, amount parsing, timestamps, supported values, currency, and references.
-- [ ] Distinguish file-level failures from row-level rejects.
-- [ ] Preserve source values needed to diagnose bad records.
-- [ ] Record issue severity, rule code, source row, batch, and useful reason.
-- [ ] Ensure malformed input does not disappear silently.
-- [ ] Add tests for each injected defect and expected disposition.
-- [ ] Update `docs/data_contract.md` and data dictionary.
+- [x] Implement stable validation rule codes.
+- [x] Validate required fields, amount parsing, timestamps, supported values, currency, and references.
+- [x] Distinguish file-level failures from row-level rejects.
+- [x] Preserve source values needed to diagnose bad records.
+- [x] Record issue severity, rule code, source row, batch, and useful reason.
+- [x] Ensure malformed input does not disappear silently.
+- [x] Add tests for each injected defect and expected disposition.
+- [x] Update `docs/data_contract.md` and data dictionary.
 
-**Exit criteria:** A mixed-quality dataset is processed deterministically; each tested defect produces the expected issue/outcome and the batch row accounting is explainable.
+**Exit criteria:** A mixed-quality dataset is processed deterministically; each tested defect produces the expected issue/outcome and the batch row accounting is explainable. (Verified: 39 tests pass with zero skips/failures).
 
 ## Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation
 
