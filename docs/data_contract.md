@@ -57,12 +57,12 @@ Avoid generating customer names, phone numbers, email addresses, postal addresse
 | `account_id` | Yes | Must resolve to a known account unless the row is a deliberate reference defect. |
 | `transaction_type` | Yes | Explicitly enumerated event type. |
 | `amount` | Yes | Decimal-formatted value, no locale-dependent separators. Amount rules are type-specific. |
-| `currency` | Yes | Supported currency code; source-to-account currency consistency must be defined. |
+| `currency` | Yes | Supported currency code; must match the currency of the referenced account. Mismatched transactions are rejected with `CURRENCY_MISMATCH`. |
 | `transaction_timestamp` | Yes | ISO 8601 timestamp with timezone offset preferred. |
 | `status` | Yes | Documented event-processing status. |
 | `channel` | Yes | Documented channel category. |
 | `counterparty_account_id` | No | Optional; required only for defined transfer event types if included in the MVP rules. |
-| `source_system` | Yes | Synthetic identifier for the event-producing source. |
+| `source_system` | Yes | Synthetic identifier for the event-producing source; empty or whitespace values rejected with `SOURCE_SYSTEM_MISSING`. |
 
 The transaction row represents an event, not a balance snapshot. A transfer may require linked debit/credit events, but that behavior should only be implemented if the generator and model explicitly define it. Reversals are separate documented events where appropriate and must not be mistaken for accidental duplicates.
 
@@ -73,19 +73,25 @@ Create a single configuration/constant source for allowed values. Do not copy in
 - Transaction types: start with `DEPOSIT`, `WITHDRAWAL`, `TRANSFER`, `PAYMENT`, `FEE`, `REVERSAL` if their semantics are implemented. Remove any unsupported type until its behavior is defined.
 - Statuses: use an explicit set such as `PENDING`, `COMPLETED`, `FAILED`, `REVERSED`, and define how each status affects metrics.
 - Channels: use a documented set such as `BRANCH`, `ATM`, `ONLINE`, `MOBILE`.
-- Currencies: configure a small set for tests. The simplest MVP can use one currency to avoid cross-currency totals; if multiple currencies are enabled, all relevant reports must group by currency.
+- Currencies: configure a small set for tests (`USD`, `EUR`, `GBP`). All transactions must match the currency of their referenced account. If multiple currencies are present in the warehouse, all aggregations and reports must group by currency.
 - Account/customer statuses and types: list the exact allowed values in configuration and documentation.
+- Date formats: `created_date` and `opened_date` must strictly conform to ISO 8601 calendar date format (`YYYY-MM-DD`). Default or fallback dates are never substituted.
 
 These examples are proposed values, not a claim that the final implementation already accepts them.
 
 ## 4. Missing, Malformed, and Invalid Values
 
+- Missing required branch name / region: reject/quarantine with `BRANCH_NAME_MISSING` or `BRANCH_REGION_MISSING`.
+- Duplicate entity identifiers: duplicate branch, customer, account, or transaction identifiers within a batch are rejected with `BRANCH_ID_DUPLICATE`, `CUSTOMER_ID_DUPLICATE`, `ACCOUNT_ID_DUPLICATE`, or `TXN_ID_DUPLICATE`.
+- Missing or malformed date fields: reject/quarantine with `DATE_PARSE_ERROR`.
 - Missing required transaction ID: reject/quarantine with stable code `TXN_ID_MISSING`.
+- Missing required source system: reject/quarantine with `SOURCE_SYSTEM_MISSING`.
+- Transaction currency mismatch: reject/quarantine with `CURRENCY_MISMATCH`.
 - Duplicate transaction event identity: apply documented source identity/replay policy; do not blindly drop the first or later row.
 - Missing/unparseable amount: preserve the raw representation and report `AMOUNT_PARSE_ERROR` or another precise code.
 - Amount outside a type-specific allowed range: use `AMOUNT_RULE_VIOLATION` only if the relevant transaction type contract defines the rule.
 - Malformed timestamp: reject with `TIMESTAMP_PARSE_ERROR`; do not substitute the current time.
-- Unknown account reference: reject/quarantine as `ACCOUNT_NOT_FOUND` unless a documented late-arriving-reference policy applies.
+- Unknown account reference: reject/quarantine as `ACCOUNT_NOT_FOUND` unless a documented late-arriving-reference policy applies. Duplicated or quarantined accounts do not enter the trusted reference set.
 - Unsupported type/status/channel/currency: reject or flag according to a documented deterministic rule.
 - Missing required file header: file-level failure, for example `FILE_REQUIRED_COLUMN_MISSING`.
 - Duplicate replay of already-loaded source event: safely skip/update/flag according to event-identity policy and record the disposition.

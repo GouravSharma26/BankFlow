@@ -50,7 +50,7 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 - [x] Add tests for each injected defect and expected disposition.
 - [x] Update `docs/data_contract.md` and data dictionary.
 
-**Exit criteria:** A mixed-quality dataset is processed deterministically; each tested defect produces the expected issue/outcome and the batch row accounting is explainable. (Verified: 39 tests pass with zero skips/failures).
+**Exit criteria:** A mixed-quality dataset is processed deterministically; each tested defect produces the expected issue/outcome and the batch row accounting is explainable. (Verified: 42 tests pass with zero skips/failures, including lifecycle guards, cross-batch reference restrictions, uniqueness, and currency consistency).
 
 ## Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation
 

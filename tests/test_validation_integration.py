@@ -13,17 +13,29 @@ import pytest
 from bankflow.__main__ import cli
 from bankflow.config import DatabaseConfig, get_settings
 from bankflow.constants import (
+    BATCH_STATUS_FAILED,
+    BATCH_STATUS_RUNNING,
     BATCH_STATUS_SUCCEEDED,
     BATCH_STATUS_SUCCEEDED_WITH_REJECTIONS,
+    CURRENCY_EUR,
+    CURRENCY_USD,
     DISPOSITION_ACCEPTED,
     DISPOSITION_REJECTED,
+    RULE_ACCOUNT_ID_DUPLICATE,
     RULE_ACCOUNT_ID_MISSING,
     RULE_ACCOUNT_NOT_FOUND,
     RULE_AMOUNT_MISSING,
     RULE_AMOUNT_PARSE_ERROR,
     RULE_AMOUNT_RULE_VIOLATION,
+    RULE_BRANCH_ID_DUPLICATE,
+    RULE_BRANCH_NAME_MISSING,
+    RULE_BRANCH_REGION_MISSING,
     RULE_CHANNEL_UNSUPPORTED,
+    RULE_CURRENCY_MISMATCH,
     RULE_CURRENCY_MISSING,
+    RULE_CUSTOMER_ID_DUPLICATE,
+    RULE_DATE_PARSE_ERROR,
+    RULE_SOURCE_SYSTEM_MISSING,
     RULE_STATUS_UNSUPPORTED,
     RULE_TIMESTAMP_PARSE_ERROR,
     RULE_TXN_ID_DUPLICATE,
@@ -301,3 +313,286 @@ def test_cli_validate_command(postgres_test_db, tmp_path: Path):
     assert batch_id in result.output
     assert "Records evaluated:" in result.output
     assert "Records valid:     32" in result.output
+
+
+@pytest.mark.integration
+def test_validation_lifecycle_guard_rejects_failed_batch(postgres_test_db):
+    """
+    Verify that validate_batch refuses staging batches marked FAILED or RUNNING,
+    and preserves original status, error_summary, records_staged, records_valid,
+    records_rejected, and leaves validated_at unchanged.
+    """
+    batch_failed_id = f"batch_failed_{uuid.uuid4().hex[:8]}"
+    batch_running_id = f"batch_running_{uuid.uuid4().hex[:8]}"
+
+    with get_connection(postgres_test_db) as conn:
+        with conn.cursor() as cur:
+            # 1. Insert FAILED staging batch
+            cur.execute("""
+                INSERT INTO monitoring.etl_batch_runs (
+                    batch_id, source_name, status, records_staged, records_valid, records_rejected,
+                    error_summary, started_at, completed_at
+                ) VALUES (
+                    %s, 'test_source', %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                );
+            """, (
+                batch_failed_id,
+                BATCH_STATUS_FAILED,
+                15,
+                0,
+                0,
+                "Staging failed: malformed CSV encoding in branches.csv",
+            ))
+
+            # 2. Insert RUNNING staging batch
+            cur.execute("""
+                INSERT INTO monitoring.etl_batch_runs (
+                    batch_id, source_name, status, records_staged, records_valid, records_rejected,
+                    error_summary, started_at
+                ) VALUES (
+                    %s, 'test_source', %s, %s, %s, %s, %s, CURRENT_TIMESTAMP
+                );
+            """, (
+                batch_running_id,
+                BATCH_STATUS_RUNNING,
+                10,
+                0,
+                0,
+                None,
+            ))
+
+        engine = ValidationEngine(conn)
+
+        # Expect FAILED batch rejection
+        with pytest.raises(ValueError, match="cannot be validated"):
+            engine.validate_batch(batch_failed_id)
+
+        # Expect RUNNING batch rejection
+        with pytest.raises(ValueError, match="cannot be validated"):
+            engine.validate_batch(batch_running_id)
+
+        # Verify nothing was mutated in monitoring.etl_batch_runs for the FAILED batch
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT status, error_summary, records_staged, records_valid, records_rejected, validated_at
+                FROM monitoring.etl_batch_runs
+                WHERE batch_id = %s;
+            """, (batch_failed_id,))
+            row = cur.fetchone()
+            assert row[0] == BATCH_STATUS_FAILED
+            assert row[1] == "Staging failed: malformed CSV encoding in branches.csv"
+            assert row[2] == 15
+            assert row[3] == 0
+            assert row[4] == 0
+            assert row[5] is None
+
+
+@pytest.mark.integration
+def test_cross_batch_reference_resolution_restrictions(postgres_test_db):
+    """
+    Verify that cross-batch reference lookups require batches with a completed
+    and successful validation outcome, excluding unvalidated or failed batches.
+    """
+    b_prev_val = f"batch_prev_val_{uuid.uuid4().hex[:8]}"
+    b_prev_unval = f"batch_prev_unval_{uuid.uuid4().hex[:8]}"
+    b_prev_fail = f"batch_prev_fail_{uuid.uuid4().hex[:8]}"
+    b_cur_txns = f"batch_cur_txns_{uuid.uuid4().hex[:8]}"
+
+    with get_connection(postgres_test_db) as conn:
+        with conn.cursor() as cur:
+            # 1. Previously validated successful batch
+            cur.execute("""
+                INSERT INTO monitoring.etl_batch_runs (
+                    batch_id, source_name, status, records_staged, records_valid, records_rejected,
+                    started_at, completed_at, validated_at
+                ) VALUES (
+                    %s, 'test_source', %s, 3, 3, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                );
+            """, (b_prev_val, BATCH_STATUS_SUCCEEDED))
+
+            cur.execute("""
+                INSERT INTO staging.stg_branches (
+                    batch_id, source_file, source_row_number, branch_id, branch_name, region, raw_payload
+                ) VALUES (%s, 'branches.csv', 1, 'BR-PREV', 'Downtown', 'NORTH', '{}');
+            """, (b_prev_val,))
+            cur.execute("""
+                INSERT INTO staging.stg_customers (
+                    batch_id, source_file, source_row_number, customer_id, customer_segment, created_date_raw, customer_status, raw_payload
+                ) VALUES (%s, 'customers.csv', 1, 'CUST-PREV', 'RETAIL', '2026-01-01', 'ACTIVE', '{}');
+            """, (b_prev_val,))
+            cur.execute("""
+                INSERT INTO staging.stg_accounts (
+                    batch_id, source_file, source_row_number, account_id, customer_id, branch_id, account_type, account_status, opened_date_raw, currency, raw_payload
+                ) VALUES (%s, 'accounts.csv', 1, 'ACC-PREV-VALID', 'CUST-PREV', 'BR-PREV', 'CHECKING', 'OPEN', '2026-01-01', 'USD', '{}');
+            """, (b_prev_val,))
+
+            # 2. Staged but unvalidated batch
+            cur.execute("""
+                INSERT INTO monitoring.etl_batch_runs (
+                    batch_id, source_name, status, records_staged, records_valid, records_rejected,
+                    started_at, completed_at, validated_at
+                ) VALUES (
+                    %s, 'test_source', %s, 1, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL
+                );
+            """, (b_prev_unval, BATCH_STATUS_SUCCEEDED))
+            cur.execute("""
+                INSERT INTO staging.stg_accounts (
+                    batch_id, source_file, source_row_number, account_id, customer_id, branch_id, account_type, account_status, opened_date_raw, currency, raw_payload
+                ) VALUES (%s, 'accounts.csv', 1, 'ACC-UNVALIDATED', 'CUST-PREV', 'BR-PREV', 'CHECKING', 'OPEN', '2026-01-01', 'USD', '{}');
+            """, (b_prev_unval,))
+
+            # 3. Failed staging batch
+            cur.execute("""
+                INSERT INTO monitoring.etl_batch_runs (
+                    batch_id, source_name, status, records_staged, records_valid, records_rejected,
+                    error_summary, started_at, completed_at, validated_at
+                ) VALUES (
+                    %s, 'test_source', %s, 1, 0, 0, 'Staging failed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL
+                );
+            """, (b_prev_fail, BATCH_STATUS_FAILED))
+            cur.execute("""
+                INSERT INTO staging.stg_accounts (
+                    batch_id, source_file, source_row_number, account_id, customer_id, branch_id, account_type, account_status, opened_date_raw, currency, raw_payload
+                ) VALUES (%s, 'accounts.csv', 1, 'ACC-FAILED', 'CUST-PREV', 'BR-PREV', 'CHECKING', 'OPEN', '2026-01-01', 'USD', '{}');
+            """, (b_prev_fail,))
+
+            # 4. Current transaction batch referencing the above three accounts
+            cur.execute("""
+                INSERT INTO monitoring.etl_batch_runs (
+                    batch_id, source_name, status, records_staged, records_valid, records_rejected,
+                    started_at, completed_at
+                ) VALUES (
+                    %s, 'test_source', %s, 3, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                );
+            """, (b_cur_txns, BATCH_STATUS_SUCCEEDED))
+
+            cur.execute("""
+                INSERT INTO staging.stg_transactions (
+                    batch_id, source_file, source_row_number, transaction_id, account_id,
+                    transaction_type, amount_raw, currency, transaction_timestamp_raw,
+                    status, channel, counterparty_account_id, source_system, raw_payload
+                ) VALUES
+                    (%s, 'txns.csv', 1, 'TXN-OK', 'ACC-PREV-VALID', 'DEPOSIT', '100.00', 'USD', '2026-03-01T12:00:00+00:00', 'COMPLETED', 'ONLINE', NULL, 'CORE', '{}'),
+                    (%s, 'txns.csv', 2, 'TXN-UNVAL', 'ACC-UNVALIDATED', 'DEPOSIT', '100.00', 'USD', '2026-03-01T12:00:00+00:00', 'COMPLETED', 'ONLINE', NULL, 'CORE', '{}'),
+                    (%s, 'txns.csv', 3, 'TXN-FAIL', 'ACC-FAILED', 'DEPOSIT', '100.00', 'USD', '2026-03-01T12:00:00+00:00', 'COMPLETED', 'ONLINE', NULL, 'CORE', '{}');
+            """, (b_cur_txns, b_cur_txns, b_cur_txns))
+
+        engine = ValidationEngine(conn)
+        summary = engine.validate_batch(b_cur_txns)
+
+        assert summary.records_evaluated == 3
+        assert summary.records_valid == 1
+        assert summary.records_rejected == 2
+        assert summary.batch_status == BATCH_STATUS_SUCCEEDED_WITH_REJECTIONS
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT source_row_id, primary_rule_code, account_id
+                FROM quarantine.vw_quarantined_transactions
+                WHERE batch_id = %s
+                ORDER BY source_row_number;
+            """, (b_cur_txns,))
+            quarantined = cur.fetchall()
+            assert len(quarantined) == 2
+            # Both unvalidated and failed-batch account references must be rejected with RULE_ACCOUNT_NOT_FOUND
+            assert quarantined[0][1] == RULE_ACCOUNT_NOT_FOUND
+            assert quarantined[0][2] == "ACC-UNVALIDATED"
+            assert quarantined[1][1] == RULE_ACCOUNT_NOT_FOUND
+            assert quarantined[1][2] == "ACC-FAILED"
+
+
+@pytest.mark.integration
+def test_duplicate_entities_and_currency_mismatch_integration(postgres_test_db):
+    """
+    Verify:
+    1. Duplicate branch, customer, and account IDs are rejected under stable duplicate rules.
+    2. Duplicated accounts do not enter the trusted account-reference set, causing transactions
+       that reference them to be rejected.
+    3. Currency consistency: transactions whose currency mismatches account currency are rejected.
+    """
+    batch_id = f"batch_dup_curr_{uuid.uuid4().hex[:8]}"
+
+    with get_connection(postgres_test_db) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO monitoring.etl_batch_runs (
+                    batch_id, source_name, status, records_staged, records_valid, records_rejected,
+                    started_at, completed_at
+                ) VALUES (
+                    %s, 'test_source', %s, 12, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                );
+            """, (batch_id, BATCH_STATUS_SUCCEEDED))
+
+            # 3 branches: 1 clean, 2 duplicates
+            cur.execute("""
+                INSERT INTO staging.stg_branches (
+                    batch_id, source_file, source_row_number, branch_id, branch_name, region, raw_payload
+                ) VALUES
+                    (%s, 'branches.csv', 1, 'BR-VALID', 'Valid Branch', 'NORTH', '{}'),
+                    (%s, 'branches.csv', 2, 'BR-DUP', 'Duplicate Branch A', 'EAST', '{}'),
+                    (%s, 'branches.csv', 3, 'BR-DUP', 'Duplicate Branch B', 'WEST', '{}');
+            """, (batch_id, batch_id, batch_id))
+
+            # 3 customers: 1 clean, 2 duplicates
+            cur.execute("""
+                INSERT INTO staging.stg_customers (
+                    batch_id, source_file, source_row_number, customer_id, customer_segment, created_date_raw, customer_status, raw_payload
+                ) VALUES
+                    (%s, 'customers.csv', 1, 'CUST-VALID', 'RETAIL', '2026-01-01', 'ACTIVE', '{}'),
+                    (%s, 'customers.csv', 2, 'CUST-DUP', 'RETAIL', '2026-01-01', 'ACTIVE', '{}'),
+                    (%s, 'customers.csv', 3, 'CUST-DUP', 'RETAIL', '2026-01-01', 'ACTIVE', '{}');
+            """, (batch_id, batch_id, batch_id))
+
+            # 3 accounts: 1 clean USD account, 2 duplicates
+            cur.execute("""
+                INSERT INTO staging.stg_accounts (
+                    batch_id, source_file, source_row_number, account_id, customer_id, branch_id, account_type, account_status, opened_date_raw, currency, raw_payload
+                ) VALUES
+                    (%s, 'accounts.csv', 1, 'ACC-VALID-USD', 'CUST-VALID', 'BR-VALID', 'CHECKING', 'OPEN', '2026-01-01', 'USD', '{}'),
+                    (%s, 'accounts.csv', 2, 'ACC-DUP', 'CUST-VALID', 'BR-VALID', 'CHECKING', 'OPEN', '2026-01-01', 'USD', '{}'),
+                    (%s, 'accounts.csv', 3, 'ACC-DUP', 'CUST-VALID', 'BR-VALID', 'CHECKING', 'OPEN', '2026-01-01', 'USD', '{}');
+            """, (batch_id, batch_id, batch_id))
+
+            # 3 transactions:
+            # 1: Clean USD transaction on ACC-VALID-USD -> ACCEPTED
+            # 2: EUR transaction on ACC-VALID-USD -> REJECTED with RULE_CURRENCY_MISMATCH
+            # 3: Transaction referencing ACC-DUP -> REJECTED with RULE_ACCOUNT_NOT_FOUND
+            cur.execute("""
+                INSERT INTO staging.stg_transactions (
+                    batch_id, source_file, source_row_number, transaction_id, account_id,
+                    transaction_type, amount_raw, currency, transaction_timestamp_raw,
+                    status, channel, counterparty_account_id, source_system, raw_payload
+                ) VALUES
+                    (%s, 'txns.csv', 1, 'TXN-OK', 'ACC-VALID-USD', 'DEPOSIT', '100.00', 'USD', '2026-03-01T12:00:00+00:00', 'COMPLETED', 'ONLINE', NULL, 'CORE', '{}'),
+                    (%s, 'txns.csv', 2, 'TXN-MISMATCH', 'ACC-VALID-USD', 'DEPOSIT', '100.00', 'EUR', '2026-03-01T12:00:00+00:00', 'COMPLETED', 'ONLINE', NULL, 'CORE', '{}'),
+                    (%s, 'txns.csv', 3, 'TXN-DUP-REF', 'ACC-DUP', 'DEPOSIT', '100.00', 'USD', '2026-03-01T12:00:00+00:00', 'COMPLETED', 'ONLINE', NULL, 'CORE', '{}');
+            """, (batch_id, batch_id, batch_id))
+
+        engine = ValidationEngine(conn)
+        summary = engine.validate_batch(batch_id)
+
+        # 3 branches + 3 customers + 3 accounts + 3 txns = 12 records
+        assert summary.records_evaluated == 12
+        # Clean: 1 branch, 1 customer, 1 account, 1 txn = 4 valid
+        assert summary.records_valid == 4
+        # Rejected: 2 branches, 2 customers, 2 accounts, 2 txns = 8 rejected
+        assert summary.records_rejected == 8
+        assert summary.batch_status == BATCH_STATUS_SUCCEEDED_WITH_REJECTIONS
+
+        with conn.cursor() as cur:
+            # Check distinct rule codes
+            cur.execute("""
+                SELECT DISTINCT rule_code
+                FROM monitoring.data_quality_issues
+                WHERE batch_id = %s;
+            """, (batch_id,))
+            issues = {r[0] for r in cur.fetchall()}
+            assert RULE_BRANCH_ID_DUPLICATE in issues
+            assert RULE_CUSTOMER_ID_DUPLICATE in issues
+            assert RULE_ACCOUNT_ID_DUPLICATE in issues
+            assert RULE_CURRENCY_MISMATCH in issues
+            assert RULE_ACCOUNT_NOT_FOUND in issues
+
+            # Verify quarantine count
+            cur.execute("SELECT count(*) FROM quarantine.quarantined_records WHERE batch_id = %s;", (batch_id,))
+            assert cur.fetchone()[0] == 8

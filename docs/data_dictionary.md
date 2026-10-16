@@ -78,6 +78,7 @@ Purpose/grain: one accepted transaction event under the defined source event ide
 | `records_skipped` | `INT` | Yes | Default 0 | Loader count | Deduplicated / replayed events skipped (Phase 3+) |
 | `reconciliation_status` | `VARCHAR(32)` | Yes | None | Reconciler outcome | Batch reconciliation outcome |
 | `error_summary` | `TEXT` | Yes | None | Exception message | High-level failure reason if failed |
+| `validated_at` | `TIMESTAMPTZ` | Yes | Index | Validator timestamp | Batch validation completion timestamp (Phase 2+) |
 | `created_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Row creation timestamp |
 
 ### 3.2 `staging.stg_branches`

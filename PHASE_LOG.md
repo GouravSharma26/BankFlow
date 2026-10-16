@@ -9,7 +9,7 @@
 - Last verified implementation phase: `Phase 2 — Validation, Quarantine, and Data Contracts`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 - Baseline commit: `cc2b371`
-- Last reviewed commit: `cc2b371`
+- Last reviewed commit: `0f551a7`
 
 ## How to Maintain This File
 
@@ -181,12 +181,12 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 
 ### Phase 2 — Validation, Quarantine, and Data Contracts
 
-- Status: VERIFIED
+- Status: CHANGES REQUESTED (Review on 0f551a7)
 - Date: 2026-10-16
 - Branch: phase/2-validation-quarantine
-- Commit SHA: 4a329b8
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/2-validation-quarantine>
-- Push status: Ready for push
+- Commit SHA: 0f551a7
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/0f551a7>
+- Push status: Pushed to origin/phase/2-validation-quarantine
 - Objective: Build a deterministic validation engine that processes staged source records, assigns stable rule codes, quarantines invalid records, and accounts for the disposition of every processed row while preserving raw staging data without in-place mutation.
 - Changes delivered:
   - Database Schema (`sql/02_validation_quarantine_schema.sql` and `src/bankflow/validation/schema.py`):
@@ -224,10 +224,52 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - Batch accounting invariant `records_evaluated = records_valid + records_rejected` verified on clean and defective datasets.
   - Quarantined records verified joinable via `quarantine.vw_quarantined_transactions` with raw staging payloads preserved intact.
   - Re-running validation on the same batch produces identical counts without duplicate records.
-- Review findings: None.
+- Review findings: Review returned CHANGES REQUESTED on commit `0f551a7` with 6 specific findings:
+  1. Protect batch lifecycle state: reject validation of FAILED, RUNNING, PENDING, or ineligible batches using FOR UPDATE locks within the validation transaction; preserve original error_summary and accounting.
+  2. Restrict cross-batch reference resolution: require prior references to come from completed, successfully validated batches (`validated_at IS NOT NULL`), excluding unvalidated, failed, or quarantined rows.
+  3. Complete required-field and date validation: add validation for `branch_name`, `region`, `created_date`, `opened_date`, `source_system`, enforcing ISO `YYYY-MM-DD` without default fallbacks.
+  4. Validate entity identifier uniqueness: add stable duplicate rules (`BRANCH_ID_DUPLICATE`, `CUSTOMER_ID_DUPLICATE`, `ACCOUNT_ID_DUPLICATE`), quarantine all duplicate occurrences, and exclude duplicate accounts from the trusted cache so referencing transactions fail.
+  5. Define currency consistency: enforce that transactions must match their referenced account currency, rejecting mismatches under `CURRENCY_MISMATCH`.
+  6. Correct project records: update `PHASE_LOG.md` with corrective review entry and update data contract and data dictionary documentation.
+- Fixes or accepted risks: All 6 findings addressed in corrective review commit.
+- Known limitations: Dimensional warehouse loading deferred to Phase 3.
+- Next action: Implement all requested corrections and verify test suite.
+
+### Phase 2 — Final Review Corrections
+
+- Status: VERIFIED
+- Date: 2026-10-16
+- Branch: phase/2-validation-quarantine
+- Commit SHA: 5a5b520 (Phase 2 review corrections)
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/tree/phase/2-validation-quarantine>
+- Push status: Ready for push
+- Objective: Resolve all 6 Phase 2 review findings on branch `phase/2-validation-quarantine` based on commit `0f551a7`:
+  1. Protect batch lifecycle state: validate_batch() locks the batch row with `SELECT ... FOR UPDATE` within the transaction, rejecting batches in `FAILED`, `RUNNING`, `PENDING`, or ineligible states with explicit errors. It preserves original status, error summary, and counts completely untouched. Legitimate revalidation of previously validated batches remains fully supported. Added live PostgreSQL integration test `test_validation_lifecycle_guard_rejects_failed_batch`.
+  2. Restrict cross-batch reference resolution: `_validate_branches()`, `_validate_customers()`, and `_validate_accounts()` restrict prior reference resolution to batches with a completed validation outcome (`validated_at IS NOT NULL`, `status IN ('SUCCEEDED', 'SUCCEEDED_WITH_REJECTIONS')`, and `records_valid + records_rejected == records_staged`). Rows in unvalidated, failed, running, or incomplete batches, as well as quarantined rows, are strictly excluded. Added live PostgreSQL integration test `test_cross_batch_reference_resolution_restrictions`.
+  3. Complete required-field and date validation: added stable rule codes and validation for missing or whitespace-only required values: `BRANCH_NAME_MISSING`, `BRANCH_REGION_MISSING`, `SOURCE_SYSTEM_MISSING`. Added date validation enforcing ISO 8601 calendar date format `YYYY-MM-DD` for customer `created_date` and account `opened_date` under `DATE_PARSE_ERROR` without substituting default dates.
+  4. Validate entity identifier uniqueness: added stable duplicate rules: `BRANCH_ID_DUPLICATE`, `CUSTOMER_ID_DUPLICATE`, `ACCOUNT_ID_DUPLICATE`. Ambiguous duplicates are quarantined. Duplicate or quarantined accounts are excluded from `valid_accounts`, causing transactions referencing them to be rejected under `ACCOUNT_NOT_FOUND`. Added unit and PostgreSQL integration coverage.
+  5. Define currency consistency: implemented `RULE_CURRENCY_MISMATCH` ("CURRENCY_MISMATCH"). Transactions whose currency differs from their referenced account currency are rejected. Updated `docs/data_quality_rules.md` and `docs/data_contract.md`. Added unit and integration tests.
+  6. Correct project records: updated `PHASE_LOG.md` preserving historical evidence of commit `0f551a7` and adding this corrective review entry. Updated `docs/data_dictionary.md` to document the new `validated_at TIMESTAMPTZ` column on `monitoring.etl_batch_runs`. Updated `DEVELOPMENT_CHECKLIST.md`.
+- Changes delivered:
+  - `src/bankflow/constants.py`: Added 8 new rule codes (`BRANCH_NAME_MISSING`, `BRANCH_REGION_MISSING`, `BRANCH_ID_DUPLICATE`, `CUSTOMER_ID_DUPLICATE`, `ACCOUNT_ID_DUPLICATE`, `DATE_PARSE_ERROR`, `SOURCE_SYSTEM_MISSING`, `CURRENCY_MISMATCH`).
+  - `sql/02_validation_quarantine_schema.sql` and `src/bankflow/validation/schema.py`: Added `validated_at TIMESTAMPTZ` column and `idx_batch_validated` index to `monitoring.etl_batch_runs`.
+  - `src/bankflow/validation/validator.py`: Added batch lifecycle state row locking (`FOR UPDATE`), lifecycle validation guards, completed validation query filters for cross-batch references, required field checks, ISO date checks, entity duplicate detection, and transaction-account currency matching.
+  - `tests/test_validation.py`: Updated unit tests for duplicate entities, missing required fields, date parse errors, transaction-account currency mismatches, and `valid_accounts` dict structure.
+  - `tests/test_validation_integration.py`: Added 3 live PostgreSQL integration tests verifying batch lifecycle guards, cross-batch reference restrictions, entity duplicates, and currency mismatch.
+  - `docs/data_quality_rules.md`, `docs/data_contract.md`, `docs/data_dictionary.md`, `DEVELOPMENT_CHECKLIST.md`, `PHASE_LOG.md`.
+- Tests/commands executed:
+  - `python -m pytest tests -v` (42 passed, 0 skipped, 0 failed in 75s against live `bankflow_test` PostgreSQL instance)
+  - `git diff --check`
+- Test outcomes: 42 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - 42 tests passing with 0 skips across the entire test suite.
+  - Integration test `test_validation_lifecycle_guard_rejects_failed_batch` proves FAILED and RUNNING batches are refused with zero alterations to status, error summary, or staging counts.
+  - Integration test `test_cross_batch_reference_resolution_restrictions` proves transactions referencing accounts in unvalidated or failed batches receive `ACCOUNT_NOT_FOUND`, while referencing previously validated accounts succeeds.
+  - Integration test `test_duplicate_entities_and_currency_mismatch_integration` proves duplicate entities are quarantined, duplicate accounts cannot be resolved by transactions, and currency mismatch triggers `CURRENCY_MISMATCH`.
+- Review findings: All 6 review findings resolved.
 - Fixes or accepted risks: None.
 - Known limitations: Phase 3 dimensional warehouse (`dim_*`, `fact_transactions`), warehouse loading, idempotency/replay against fact tables, and analytics reports are Phase 3/4 scope.
-- Next action: Submit Phase 2 for review on branch `phase/2-validation-quarantine`; next phase is Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation.
+- Next action: Submit Phase 2 review corrections for approval; wait for external review before starting Phase 3.
 
 ## Phase Entry Template
 

@@ -21,6 +21,9 @@ VALIDATION_DDL = """
 CREATE SCHEMA IF NOT EXISTS monitoring;
 CREATE SCHEMA IF NOT EXISTS quarantine;
 
+ALTER TABLE monitoring.etl_batch_runs ADD COLUMN IF NOT EXISTS validated_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_batch_validated ON monitoring.etl_batch_runs (validated_at);
+
 CREATE TABLE IF NOT EXISTS monitoring.data_quality_issues (
     issue_id VARCHAR(64) PRIMARY KEY,
     batch_id VARCHAR(64) NOT NULL REFERENCES monitoring.etl_batch_runs(batch_id) ON DELETE CASCADE,
