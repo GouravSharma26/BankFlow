@@ -667,7 +667,7 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-17
 - Branch: `hotfix/password-exact-preservation`
-- Commit SHA: pending commit
+- Commit SHA: `2a95088`
 - Push status: In progress (pushing to `origin/hotfix/password-exact-preservation`)
 - Objective: Preserve configured reporting database passwords exactly without stripping leading/trailing whitespace, while retaining empty/whitespace-only password validation and username trimming.
 - Scope delivered:
