@@ -474,9 +474,10 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-17
 - Branch: phase/4-sql-analytics-metrics
-- Commit SHA: pending initial commit
-- GitHub URL: pending PR creation
-- Push status: In progress (pushing branch and opening review PR to main)
+- Commit SHA: 607916d
+- Pull Request: PR #5 (<https://github.com/GouravSharma26/BankFlow/pull/5>)
+- GitHub CI Run (PR #5): <https://github.com/GouravSharma26/BankFlow/actions/runs/39007192510> (SUCCESS, 78 passed, 0 skipped, 0 failed in 5.67s)
+- Push status: Pushed to `origin/phase/4-sql-analytics-metrics`, PR #5 opened to `main` for review (auto-merge deferred)
 - Objective: Implement comprehensive SQL analytics, conformed analytical reporting views, precise metric definitions contract, CLI reporting commands, and PostgreSQL integration tests for BankFlow Phase 4.
 - Changes delivered:
   1. `sql/05_reporting_views.sql`: Created conformed views in dedicated `reporting` schema:
