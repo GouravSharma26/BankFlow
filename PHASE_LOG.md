@@ -624,8 +624,10 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-17
 - Branch: `hotfix/reporting-credential-config`
-- Commit SHA: `ed2a58d`
-- Pull Request: Pending PR
+- Commit SHA: `e05ac36`
+- Pull Request: PR #8 (<https://github.com/GouravSharma26/BankFlow/pull/8>)
+- GitHub CI Run (PR #8): <https://github.com/GouravSharma26/BankFlow/actions/runs/39030830268> (SUCCESS, 167 passed, 0 skipped, 0 failed in 9.49s)
+- Push status: Pushed to `origin/hotfix/reporting-credential-config`, PR #8 opened into `main` (auto-merge deferred)
 - Objective: Enforce paired reporting credentials, eliminate command-line password arguments in documentation, add isolated regression tests, and verify complete test suite before Phase 6.
 - Scope delivered:
   1. **Enforce Paired Reporting Credentials (`src/bankflow/api/config.py`):**
