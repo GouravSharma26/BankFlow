@@ -4,15 +4,16 @@
 
 ## Current Status
 
-- Overall status: `CHANGES IMPLEMENTED — Phase 3 Review Corrections Awaiting Review`
+- Overall status: `REVIEW PENDING — Phase 3 Final Replay & Concurrency Corrections Complete`
 - Current phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation`
 - Last approved implementation phase: `Phase 2 — Validation, Quarantine, and Data Contracts (Approved at commit d4e3c02)`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 - Baseline commit: `cc2b371`
-- Latest reviewed commit: `d4e3c02`
-- Implementation baseline merged to main: `7fc540d`
-- Corrective implementation commit: `40ed5ff`
-- Corrective implementation branch: `phase/3-warehouse-loading`
+- Latest reviewed head: `b92c3cc`
+- Previous review correction commit: `40ed5ff`
+- Implementation correction commit: `558b002`
+- Branch: `phase/3-warehouse-loading`
+- Phase status: `REVIEW PENDING`
 
 ## How to Maintain This File
 
@@ -354,7 +355,46 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - Unsupported lifecycle states are rejected.
   - Transactions dated 2014 and 2042 dynamically generate date keys and load successfully.
 - Review findings: All 8 review findings resolved.
-- Next action: Commit corrective changes, push to `phase/3-warehouse-loading`, and submit for review.
+- Next action: Submit Phase 3 review corrections for review.
+
+### Phase 3 — Final Replay-Integrity and Concurrency Corrections
+
+- Status: VERIFIED LOCALLY — AWAITING REVIEW
+- Date: 2026-10-17
+- Branch: phase/3-warehouse-loading
+- Commit SHA: 558b002
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/558b002>
+- Push status: In progress (push to origin/phase/3-warehouse-loading)
+- Objective: Address final Phase 3 review findings on complete fact payload replay comparison (Finding 1) and race-safe concurrent warehouse loading (Finding 2) without starting Phase 4 or rebuilding completed components.
+- Changes delivered:
+  1. Complete fact payload replay comparison (Finding 1):
+     - Updated `WarehouseLoader._load_facts()` in `src/bankflow/warehouse/loader.py` to compare all 7 immutable fields of the fact record: `amount`, `currency`, `status`, `account_id`, `transaction_timestamp`, `transaction_type`, and `channel` (resolving existing account and transaction type via conformed dimensions).
+     - Events are classified as identical replays (`RULE_SOURCE_REPLAY_SKIPPED`, `DISPOSITION_SKIPPED`) ONLY when all 7 fields match.
+     - Reused event identities with any differing immutable field (including changed `transaction_type` or changed `channel` independently) are classified as `RULE_CONFLICTING_REPLAY_PAYLOAD`, recorded in `monitoring.data_quality_issues` (`SEVERITY_ERROR`, `DISPOSITION_REJECTED`), quarantined in `quarantine.quarantined_records`, deducted from batch `records_valid`, added to `records_rejected`, transition the batch to `SUCCEEDED_WITH_REJECTIONS`, and trigger reconciliation discrepancy.
+     - Updated `ReconciliationEngine._reconcile_monetary_values()` in `src/bankflow/warehouse/reconciliation.py` to join `dim_transaction_type` and compare `transaction_type_code` and `channel` alongside account, timestamp, amount, currency, and status.
+     - Added live integration test `test_warehouse_conflicting_replay_changed_type_and_channel_independently` in `tests/test_warehouse_integration.py` asserting independent type and channel changes are quarantined and fail reconciliation.
+  2. Concurrency-safe atomic replay handling (Finding 2):
+     - Eliminated race-prone select-then-insert pattern in `WarehouseLoader._load_facts()`. Implemented atomic PostgreSQL uniqueness conflict path using:
+       `INSERT INTO warehouse.fact_transactions (...) ON CONFLICT (source_system, transaction_id) DO NOTHING RETURNING transaction_key;`
+     - When insertion does not return a key (conflict detected), atomically retrieves the existing committed event with dimension joins and performs complete 7-field immutable payload comparison.
+     - Atomically logs identical replays or conflicting replays and executes the batch accounting adjustment in `monitoring.etl_batch_runs` once inside the transaction.
+     - Hardened `init_warehouse_schema()` in `src/bankflow/warehouse/schema.py` and `sql/03_warehouse_schema.sql` against concurrent schema initialization deadlocks by verifying schema existence before attempting DDL/DML, adding `WHERE NOT EXISTS` guards on dimension seeding, and wrapping execution in `transaction(conn)`.
+     - Added live multi-threaded PostgreSQL integration test `test_warehouse_concurrent_loads_atomic_replay_safety` using separate database connections and threading barriers to load identical and conflicting event replays concurrently across separate batches. Verified 0 unhandled uniqueness exceptions, exactly 1 fact record created, and appropriate skip/quarantine classification on the losing thread.
+- Tests/commands executed:
+  - `pytest -v tests/test_warehouse_integration.py -k "test_warehouse_conflicting_replay_changed_type_and_channel_independently"` (1 passed)
+  - `pytest -v tests/test_warehouse_integration.py -k "test_warehouse_concurrent_loads_atomic_replay_safety"` (1 passed)
+  - `pytest -v tests/test_warehouse_integration.py` (17 passed, 0 skipped, 0 failed in 179s against PostgreSQL)
+  - `pytest -v` (67 passed, 0 skipped, 0 failed across full repository suite in 267s against PostgreSQL `bankflow_test`)
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes: 67 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - Live PostgreSQL multi-connection concurrent loads execute without deadlocks or uniqueness violations.
+  - Independent changes to `transaction_type` or `channel` for existing event identities are rejected as `RULE_CONFLICTING_REPLAY_PAYLOAD` and quarantined.
+  - Zero duplicate fact records inserted under concurrent identical or conflicting loads.
+  - Reconciliation fails with discrepancy when conflicting payloads are detected.
+- Review findings: Finding 1 and Finding 2 resolved.
+- Known limitations: Phase 3 review remains pending external review; Phase 4 not started.
+- Next action: Push commit to `phase/3-warehouse-loading` and await external review.
 
 ## Phase Entry Template
 
