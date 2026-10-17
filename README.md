@@ -1,113 +1,135 @@
 # BankFlow — Banking Transaction ETL & Analytics Warehouse
 
-> **Status: Phase 1 Implemented & Verified.** The Python foundation, deterministic synthetic data generator, Docker Compose PostgreSQL 17 environment, staging schema, and batch ingestion are implemented and verified with automated unit and integration tests.
->
-> **Future Work:** The validation & quarantine engine ([Phase 2](DEVELOPMENT_CHECKLIST.md)), dimensional warehouse ([Phase 3](DEVELOPMENT_CHECKLIST.md)), analytics & reconciliation queries ([Phase 4](DEVELOPMENT_CHECKLIST.md)), and BI dashboard ([Phase 5](DEVELOPMENT_CHECKLIST.md)) are planned future phases.
+BankFlow is a Python and PostgreSQL portfolio project demonstrating an end-to-end batch ETL workflow on **synthetic banking data**. It ingests CSV files, preserves source lineage, validates data contracts, quarantines rejected records, loads a dimensional warehouse, detects duplicate/conflicting replays, and reconciles batch outcomes.
 
-BankFlow is an educational data-engineering project that uses **synthetic banking data only** to demonstrate how raw transaction files can be ingested, validated, transformed, loaded into a PostgreSQL dimensional warehouse, reconciled, and used for analytics.
+> **Scope:** BankFlow is a CLI-based data engineering project, not a banking product or hosted web dashboard. It does not connect to real banks, move money, or use real customer data. The implemented core includes ETL staging, validation/quarantine, dimensional loading, replay protection, and reconciliation. Cloud scheduling and a BI dashboard are optional follow-up work.
 
-It is designed as a portfolio project for entry-level Data Engineer, Data Analyst, and Software Application Analyst roles.
+## Highlights
 
-## Project goals
+- **Repeatable batch ingestion:** CSV header checks, raw staging, batch IDs, row-level lineage, and seeded synthetic-data generation.
+- **Data quality:** contract validation, rule-coded quality issues, rejected-record quarantine, and strict date/financial amount checks.
+- **Dimensional warehouse:** PostgreSQL star schema with date, transaction-type, branch, customer, and account dimensions plus a transaction fact table.
+- **Replay safety:** idempotent loads distinguish identical source-event replays from conflicting payloads; unique constraints and conflict-safe inserts support concurrent loading.
+- **Reconciliation:** count/value checks across staged, accepted, rejected, and warehouse records; CLI returns a failure exit code when reconciliation fails.
+- **Operational safety:** environment-based configuration, a dedicated test database, destructive-test guardrails, Docker Compose PostgreSQL, and automated tests.
+- **Analytics SQL:** reusable reports for monthly transaction volumes, transaction-type/channel mix, branch activity, data-quality issues, batch health, and quarantine volume.
 
-- Build a repeatable Python batch ETL pipeline.
-- Preserve raw/staging records and explicitly report invalid data.
-- Design PostgreSQL staging, monitoring, dimensional warehouse, and reporting layers.
-- Make warehouse loading idempotent and transaction-safe.
-- Reconcile source, accepted, rejected, and loaded records under documented rules.
-- Build reproducible SQL analytics and a small data-quality/dashboard experience.
-- Provide automated tests, CI, clear documentation, and a clean-clone setup.
+## Technology stack
 
-## Safety and scope
+| Area | Technology |
+|---|---|
+| Language / CLI | Python 3.12+, Click |
+| Database | PostgreSQL 17 |
+| Data access | psycopg2 |
+| Configuration | python-dotenv and environment variables |
+| Local database | Docker Compose |
+| Automated testing | pytest and PostgreSQL integration tests |
+| Analytics | SQL over a dimensional warehouse |
 
-BankFlow is a simulation, **not a real banking application**. It will not connect to bank systems, move money, make actual financial decisions, or use real customer/account data. Use synthetic datasets only.
+## Quickstart — Windows PowerShell
 
-## Documentation map
+Prerequisites: Python 3.12, Docker Desktop with Compose, and Git.
 
-- [`plan.md`](plan.md) — master requirements, detailed data model, ETL rules, roadmap, and acceptance criteria.
-- [`AGENTS.md`](AGENTS.md) — mandatory instructions for Antigravity/coding agents, including phase and GitHub handoff rules.
-- [`HUMAN_SETUP.md`](HUMAN_SETUP.md) — developer environment and safe setup instructions.
-- [`DEVELOPMENT_CHECKLIST.md`](DEVELOPMENT_CHECKLIST.md) — phase-by-phase tasks and exit criteria.
-- [`REVIEW_WORKFLOW.md`](REVIEW_WORKFLOW.md) — commit/push process and how to request a phase review.
-- [`PHASE_LOG.md`](PHASE_LOG.md) — evidence-based record of completed phases and review findings.
-- [`docs/architecture.md`](docs/architecture.md) — component boundaries and data flow.
-- [`docs/data_contract.md`](docs/data_contract.md) — source fields, semantics, and validation contract.
-- [`docs/design_decisions.md`](docs/design_decisions.md) — current technology choices and decision log.
-- [`docs/testing_strategy.md`](docs/testing_strategy.md) — unit, integration, end-to-end, and failure testing requirements.
-
-## Technology stack & status
-
-| Area | Component | Status | Notes |
-|---|---|---|---|
-| Language | Python 3.12+ | Implemented (Phase 1) | Package configured with `pyproject.toml` |
-| Database | PostgreSQL 17 | Implemented (Phase 1) | Local Docker Compose setup (`127.0.0.1:5432`/`5433`) |
-| DB Driver | `psycopg2-binary` | Implemented (Phase 1) | Connection handling and transactional contexts |
-| Data Generator | Synthetic Generator CLI | Implemented (Phase 1) | Fixed-seed deterministic generator with date ranges & defect scenarios |
-| Staging & Monitoring | PostgreSQL staging schema | Implemented (Phase 1) | `monitoring.etl_batch_runs` and `staging.stg_*` tables |
-| Staging Ingestion | `bankflow stage` | Implemented (Phase 1) | Validates CSV headers and stages raw payloads with lineage |
-| Validation Engine | Validation & Quarantine | Planned (Phase 2) | Data-contract rule enforcement & quarantine tables |
-| Warehouse | Dimensional Models (Star Schema)| Planned (Phase 3) | Idempotent warehouse loading & SCD Type 2 dimensions |
-| Reconciliation | Count/Value Audits | Planned (Phase 4) | Ingestion-to-warehouse reconciliation reports |
-| Analytics & Reports | Reporting Views & Queries | Planned (Phase 4) | Monthly volumes, high-value transfers, fee analyses |
-| Dashboard | BI Dashboard & CI | Planned (Phase 5) | Metabase / Power BI dashboard and GitHub Actions CI |
-
-## Repository layout
-
-```text
-BankFlow/
-├── .env.example              # Sample configuration template with safety guards
-├── docker-compose.yml        # PostgreSQL 17 service with persistent storage
-├── docker/
-│   └── 01-init-test-db.sql   # Creates dedicated bankflow_test database
-├── pyproject.toml            # Python packaging and dependency declarations
-├── src/bankflow/
-│   ├── __init__.py
-│   ├── __main__.py           # CLI entry point (generate, stage, init-db, test-connection)
-│   ├── config.py             # Environment configuration & test database safety guards
-│   ├── constants.py          # Data contract columns, defect codes, domain values
-│   ├── db.py                 # Safe database connections & transaction managers
-│   ├── generator/
-│   │   ├── defects.py        # Configurable defect injection scenarios
-│   │   └── generator.py      # Deterministic synthetic data generator with date boundaries
-│   └── staging/
-│       ├── loader.py         # CSV header validation, DictReader binding, staging ingestion
-│       └── schema.py         # DDL execution for staging and monitoring schemas
-├── sql/
-│   └── 01_staging_schema.sql # DDL for monitoring and staging schemas
-├── tests/
-│   ├── test_config.py        # Database configuration and test safety guardrail tests
-│   ├── test_generator.py     # Determinism, inclusive date ranges, and defect scenarios
-│   ├── test_staging_validation.py # Header whitespace, ordering, andDictReader corruption guards
-│   └── test_db_integration.py # PostgreSQL schema init, staging, and batch collision tests
-├── docs/                     # Architecture, data contracts, design decisions, and testing
-├── DEVELOPMENT_CHECKLIST.md  # Phase-by-phase implementation checklist
-├── HUMAN_SETUP.md            # Local developer setup and execution commands
-├── PHASE_LOG.md              # Historical evidence log and review resolutions
-├── plan.md                   # Canonical system specifications and scope
-└── README.md
-```
-
-## Quickstart
-
-Follow [`HUMAN_SETUP.md`](HUMAN_SETUP.md) for full developer environment setup.
+### 1. Install the project
 
 ```powershell
-# 1. Start PostgreSQL with Docker Compose
-docker compose up -d
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
 
-# 2. Test database connectivity
+### 2. Configure and start PostgreSQL
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --wait
 python -m bankflow test-connection
-python -m bankflow test-connection --test-db
-
-# 3. Initialize staging schema
 python -m bankflow init-db
+```
 
-# 4. Generate synthetic dataset with date ranges
-python -m bankflow generate --output-dir data/samples --start-date 2026-01-01 --end-date 2026-01-31 --seed 42 --transactions 100
+If you already have a working `.env`, do not overwrite it. If host port 5432 is occupied, set `BANKFLOW_DB_PORT=5433` in `.env` before starting Compose. The Compose initialization script creates the separate `bankflow_test` database when a new database volume is initialized.
 
-# 5. Ingest dataset into staging
-python -m bankflow stage --input-dir data/samples
+### 3. Run the clean end-to-end pipeline
 
-# 6. Run automated test suite
+```powershell
+python -m bankflow generate --output-dir data/samples --seed 42 --branches 5 --customers 25 --accounts 40 --transactions 100
+python -m bankflow run --input-dir data/samples --batch-id demo-clean-001
+python -m bankflow batch-status demo-clean-001
+```
+
+The `run` command executes staging → validation → warehouse loading → reconciliation. A failed pipeline or `UNRECONCILED` result produces a non-zero exit code.
+
+### 4. Try data-quality scenarios (optional)
+
+```powershell
+python -m bankflow generate --output-dir data/defective-sample --seed 42 --transactions 100 --with-defects
+python -m bankflow run --input-dir data/defective-sample --batch-id demo-defects-001
+python -m bankflow batch-status demo-defects-001
+```
+
+The defect generator exercises validation and quarantine rules. Inspect batch counts and quality issues rather than expecting every generated row to load.
+
+## CLI reference
+
+Run `python -m bankflow --help` for the installed command list.
+
+| Command | Purpose |
+|---|---|
+| `generate` | Generate reproducible synthetic CSVs, optionally with defects |
+| `stage` | Ingest a CSV dataset directory into staging |
+| `validate BATCH_ID` | Validate staged records and quarantine rejected rows |
+| `load BATCH_ID` | Load conformed dimensions and accepted transaction facts |
+| `reconcile BATCH_ID` | Audit counts and monetary totals |
+| `run` | Run staging, validation, loading, and reconciliation in one command |
+| `batch-status BATCH_ID` | Inspect batch metrics and data-quality issue counts |
+| `init-db` | Initialize staging, monitoring, quarantine, and warehouse schemas |
+| `test-connection` | Verify database connectivity without logging credentials |
+
+Use `--test-db` on commands that support it to target the dedicated test database instead of the primary local database.
+
+## Tests
+
+Start PostgreSQL first and ensure `bankflow_test` exists. Then run:
+
+```powershell
 python -m pytest tests -v
 ```
+
+The integration tests must use the dedicated test database. Destructive test setup is guarded against non-test database names. CI is configured to require integration tests, so a missing test database should fail the workflow instead of silently skipping integration coverage.
+
+## Analytics SQL
+
+After initializing the schemas and loading at least one batch, run the reporting pack from the repository root with a local `psql` client. Adjust the connection string for your `.env`:
+
+```powershell
+psql "postgresql://postgres:postgres@localhost:5432/bankflow" -v ON_ERROR_STOP=1 -f sql/04_analytics_queries.sql
+```
+
+The queries report gross amounts grouped by currency. Do not add different currencies together without an explicit FX-conversion policy, and do not interpret gross totals as signed net cash flow.
+
+## Architecture
+
+```text
+Synthetic CSV files
+       |
+       v
+Staging + batch and row lineage
+       |
+       v
+Validation engine ------> Data-quality issues + quarantine
+       |
+       v
+Conformed dimensions + transaction facts (PostgreSQL star schema)
+       |
+       v
+Count/value reconciliation + reporting SQL
+```
+
+Further details: [architecture](docs/architecture.md) · [data contract](docs/data_contract.md) · [data dictionary](docs/data_dictionary.md) · [quality rules](docs/data_quality_rules.md) · [metric definitions](docs/metric_definitions.md) · [testing strategy](docs/testing_strategy.md) · [developer setup](HUMAN_SETUP.md) · [development checklist](DEVELOPMENT_CHECKLIST.md).
+
+## Deployment notes and limitations
+
+The repeatable local deployment uses Docker Compose for PostgreSQL and the installed Python CLI. A scheduled/cloud deployment can run the CLI as a batch job with database credentials supplied through environment variables or `DATABASE_URL`; keep secrets out of source control. This repository does **not** currently provide a hosted HTTP endpoint or BI dashboard. Add cloud scheduling, a managed database, monitoring, and a dashboard as separate steps rather than describing them as already deployed.
+
+Use synthetic datasets only. Never commit `.env`, credentials, or real banking/customer data.

@@ -4,7 +4,15 @@
 
 ## 1. Current repository state
 
-Phase 1 (Python foundation, synthetic data generator, Docker Compose PostgreSQL 17 environment, staging schema, and batch ingestion) is implemented and verified. Future phases (Phase 2 validation engine, Phase 3 dimensional warehouse, Phase 4 analytics, Phase 5 BI dashboard) are planned and under active development.
+BankFlow is a fully verified, runnable Python 3.12 and PostgreSQL CLI ETL and analytics warehouse for synthetic banking data. The implemented and tested core includes:
+- Staging ingestion with source lineage preservation.
+- Rule-based contract validation and quarantined record tracking.
+- Conformed dimensional warehouse loading with date, transaction type, branch, customer, and account dimensions, and transaction facts.
+- Idempotent replay safety distinguishing identical replays from conflicting payloads with concurrency protection.
+- End-to-end reconciliation auditing records and monetary balances.
+- Repeatable SQL analytics pack for transaction volume, channel/type mix, branch metrics, batch health, and quarantine analysis.
+
+Cloud scheduling, managed cloud hosting, and BI dashboards (Power BI / Metabase) are deferred follow-up items.
 
 GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 
@@ -88,19 +96,42 @@ If PowerShell blocks virtual-environment activation, use an allowed terminal con
    python -m pytest tests -v
    ```
 
-4. **Generate synthetic data:**
+4. **Verify database connectivity:**
    ```powershell
-   bankflow generate --output-dir data/samples --seed 42 --transactions 100
+   python -m bankflow test-connection
+   python -m bankflow test-connection --test-db
    ```
 
-5. **Initialize PostgreSQL database:**
+5. **Initialize PostgreSQL database schemas:**
    ```powershell
-   bankflow init-db
+   python -m bankflow init-db
    ```
 
-6. **Ingest dataset into staging:**
+6. **Generate synthetic data:**
    ```powershell
-   bankflow stage --input-dir data/samples
+   python -m bankflow generate --output-dir data/samples --seed 42 --branches 5 --customers 25 --accounts 40 --transactions 100
+   ```
+
+7. **Run end-to-end batch ETL:**
+   ```powershell
+   python -m bankflow run --input-dir data/samples --batch-id demo-001
+   ```
+   *Or execute granular lifecycle stages:*
+   ```powershell
+   python -m bankflow stage --input-dir data/samples --batch-id demo-001
+   python -m bankflow validate demo-001
+   python -m bankflow load demo-001
+   python -m bankflow reconcile demo-001
+   ```
+
+8. **Inspect batch metrics and status:**
+   ```powershell
+   python -m bankflow batch-status demo-001
+   ```
+
+9. **Run analytics query pack:**
+   ```powershell
+   psql "postgresql://postgres:postgres@localhost:5432/bankflow" -v ON_ERROR_STOP=1 -f sql/04_analytics_queries.sql
    ```
 
 ## 6. PostgreSQL safety checklist
