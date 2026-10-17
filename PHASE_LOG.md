@@ -667,8 +667,11 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-17
 - Branch: `hotfix/password-exact-preservation`
-- Commit SHA: `2a95088`
-- Push status: In progress (pushing to `origin/hotfix/password-exact-preservation`)
+- Code Commit SHA: `2a95088c5608144a5fdfee5fcf06614b3240e749`
+- Documentation / Head Commit SHA: `ad630a6af19ff3535dbd51cc279d41237cdb62fc`
+- Pull Request: PR #9 (<https://github.com/GouravSharma26/BankFlow/pull/9>)
+- GitHub CI Run (PR #9): <https://github.com/GouravSharma26/BankFlow/actions/runs/39032723924> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.42s)
+- Push status: Pushed to `origin/hotfix/password-exact-preservation`; PR #9 open into `main` (auto-merge deferred)
 - Objective: Preserve configured reporting database passwords exactly without stripping leading/trailing whitespace, while retaining empty/whitespace-only password validation and username trimming.
 - Scope delivered:
   1. **Password Exact Preservation (`src/bankflow/api/config.py`):**
@@ -689,10 +692,11 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Acceptance evidence:
   - Password with leading/trailing spaces is preserved exactly in `DatabaseConfig.password`.
   - All 19 API config unit tests pass. Full test suite passes (168 passed, 0 failed, 0 skipped) under mandatory PostgreSQL integration testing.
+  - GitHub Actions CI verified clean on branch and PR #9 (168 passed, 0 failed).
 - Known limitations:
   - None within tested scope.
   - Phase 6 (Deployment, Packaging, and Portfolio Presentation) remains to be performed.
-- Next action: Submit follow-up hotfix PR for review; do not merge automatically. Proceed to Phase 6 once reviewed and merged.
+- Next action: Await review and merge of PR #9; do not start Phase 6 before merge.
 
 
 ## Phase Entry Template
