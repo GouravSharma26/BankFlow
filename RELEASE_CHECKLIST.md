@@ -19,8 +19,8 @@ Ship BankFlow as a Python/PostgreSQL CLI data-engineering project: synthetic CSV
 - [x] Confirm `.env`, credentials, and generated CSV files are not tracked.
 - [x] Update the README and setup guide so the delivered features are not described as future work.
 - [x] Add the analytics SQL and CI workflow from this patch; run the CI workflow on GitHub and confirm it passes.
-- [ ] Create a pull request from `phase/3-warehouse-loading` into `main`, review the changed files, and merge only after the CI run is green. Avoid force pushes.
-- [ ] Refresh `PHASE_LOG.md` with exact commit IDs and test results; do not claim a hosted service or dashboard exists.
+- [x] Create a pull request into `main` (PR #3 merged; PR #4 opened for CI test failure reporting & date dimension hotfix), review changed files, and merge only after the CI run is green. Avoid force pushes.
+- [x] Refresh `PHASE_LOG.md` with exact commit IDs, test results, and verified CI runs; do not claim a hosted service or dashboard exists.
 
 ## Defer until after resume submission
 
