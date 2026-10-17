@@ -32,6 +32,7 @@ from bankflow.constants import (
 from bankflow.db import check_connection, get_connection
 from bankflow.generator.defects import DefectConfig
 from bankflow.generator.generator import SyntheticDataGenerator
+from bankflow.analytics.schema import init_reporting_schema
 from bankflow.staging.loader import StagingLoader
 from bankflow.staging.schema import init_staging_schema
 from bankflow.validation.schema import init_validation_schema
@@ -58,6 +59,7 @@ def postgres_test_db():
         init_staging_schema(conn)
         init_validation_schema(conn)
         init_warehouse_schema(conn)
+        init_reporting_schema(conn)
 
     return test_db
 

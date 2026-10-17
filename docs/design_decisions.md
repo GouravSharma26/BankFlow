@@ -19,8 +19,9 @@
 | TD-011 | Data content | Synthetic records only | Accepted | Prevent privacy and security risks; no live systems or customer records. |
 | TD-012 | Warehouse model | Dimensional star schema | Accepted | Clear analytical model with fact/dimension relationships. |
 | TD-013 | Event replay | Database-enforced idempotency | Accepted | Prevent duplicate facts even across repeated/concurrent attempts. |
-| TD-014 | Currency reporting | One currency for simplest MVP or grouped currencies | Open/configurable | Never sum incomparable currencies without an explicit conversion model. |
+| TD-014 | Currency reporting | Grouped currencies only | Accepted | Never sum incomparable currencies without an explicit conversion model; all views group by currency. |
 | TD-015 | Batch status | Explicit lifecycle states persisted in monitoring | Accepted | Make process state and failure/recovery outcomes inspectable. |
+| TD-019 | Reporting schema | Dedicated `reporting` schema with conformed views | Accepted | Centralize metric definitions in PostgreSQL views for SQL reports, CLI, and BI tools. |
 
 ## 2. Decision-Making Rules
 
@@ -151,3 +152,16 @@ Append entries below rather than silently changing an existing decision.
 - Rationale: Adheres to core data engineering principles: never sum disparate currencies without exchange rates; guarantee that every staged dollar/cent is accounted for in either warehouse or quarantine.
 - Consequences / trade-offs: Reconciler must exclude historical replays from the current batch's value check so that skipped events do not cause false-positive value discrepancies.
 - Verification or evidence: Verified in `tests/test_warehouse_integration.py::test_warehouse_reconciliation_detects_discrepancy` and clean batch reconciliation tests.
+
+### TD-019 — Dedicated Reporting Schema with Conformed Analytical Views
+- Date / phase: 2026-10-17 / Phase 4
+- Status: Accepted
+- Context: Analytical consumers, CLI reporting tools, and potential BI dashboards require a reliable, conformed reporting layer over the warehouse facts and monitoring tables that standardizes metric calculations, eliminates query duplication, and enforces currency isolation.
+- Options considered:
+  1. Ad-hoc queries in client code: clients write custom SQL directly against `warehouse` and `monitoring`. Highly error-prone; risks diverging metric definitions, inconsistent status filters, and accidentally summing multiple currencies.
+  2. Materialized reporting tables refreshed by ETL: high write overhead, potential synchronization lag, and extra storage.
+  3. PostgreSQL Views in a dedicated `reporting` schema: conformed views defining canonical metrics directly over `warehouse`, `monitoring`, and `quarantine`.
+- Decision: Implement standard PostgreSQL views in a dedicated `reporting` schema (`reporting.v_*`) initialized alongside warehouse tables via `sql/05_reporting_views.sql`.
+- Rationale: Views provide zero storage overhead, guaranteed real-time consistency with loaded batches, encapsulation of complex join logic, and a stable contract for downstream dashboards/BI or API consumers.
+- Consequences / trade-offs: Query execution time depends on base table indexing. Database indices on `dim_date`, `dim_transaction_type`, `dim_branch`, and `fact_transactions` foreign keys provide index scans without speculative indexing.
+- Verification or evidence: Verified via 11 integration tests in `tests/test_analytics_integration.py` executing all 7 views against deterministic known-answer datasets and asserting metric precision.

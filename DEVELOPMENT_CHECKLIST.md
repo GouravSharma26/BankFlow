@@ -53,7 +53,7 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 **Exit criteria:** A mixed-quality dataset is processed deterministically; each tested defect produces the expected issue/outcome and the batch row accounting is explainable. (Verified: 46 automated tests pass with zero skips/failures against bankflow_test, including lifecycle guards, cross-batch reference restrictions, uniqueness, currency consistency, and duplicate historical exclusion. Phase 2 externally reviewed and approved at commit `d4e3c02`).
 
 
-## Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation (Status: REVIEW PENDING)
+## Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation (Status: VERIFIED / MERGED TO MAIN)
 
 **Goal:** Load valid records to a dimensional PostgreSQL warehouse safely.
 
@@ -68,24 +68,24 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 - [x] Implement count and, where comparable, value reconciliation.
 - [x] Add integration and replay tests.
 
-**Exit criteria:** A valid mixed batch populates the warehouse; the same event/file can be replayed without duplicate facts; a forced load failure does not leave an invalid partial warehouse state; reconciliation matches the defined contract. (Verified: 67 automated unit and integration tests pass with zero skips/failures against bankflow_test, covering complete fact payload replay comparison, atomic concurrency-safe loading, dimensional key resolution, replay idempotency, whitespace-normalized joins, conflicting-replay payload rejection and quarantine, non-zero CLI exit codes on reconciliation failures, strict 2-decimal scale validation, historical-dimension dependency preflight guards, batch lifecycle status allowlist, and extended date dimension range. External review of Phase 3 remains pending; Phase 4 not started).
+**Exit criteria:** A valid mixed batch populates the warehouse; the same event/file can be replayed without duplicate facts; a forced load failure does not leave an invalid partial warehouse state; reconciliation matches the defined contract. (Verified: Phase 3 dimensional warehouse loading, idempotency enforcement, replay protection, and reconciliation were reviewed, corrected for complete fact payload replay and concurrency, merged to main via PR #3 and PR #4, and verified in CI with 67 passing tests, zero failures, zero skips).
 
-## Phase 4 — SQL Analytics and Metric Definitions
+## Phase 4 — SQL Analytics and Metric Definitions (Status: VERIFIED)
 
 **Goal:** Deliver reliable analytics whose definitions are documented and repeatable.
 
-- [ ] Implement daily activity query.
-- [ ] Implement deposit-versus-withdrawal query with explicit event/status semantics.
-- [ ] Implement branch/channel analysis.
-- [ ] Implement data-quality issue reports.
-- [ ] Implement ETL run/pipeline reports.
-- [ ] Create reporting views where useful.
-- [ ] Add indexes only when query use or measurements justify them.
-- [ ] Inspect relevant query plans and save reproducible examples where useful.
-- [ ] Document definitions, filters, currency rules, and known limitations.
-- [ ] Compare query output to expected fixture results.
+- [x] Implement daily activity query.
+- [x] Implement deposit-versus-withdrawal query with explicit event/status semantics.
+- [x] Implement branch/channel analysis.
+- [x] Implement data-quality issue reports.
+- [x] Implement ETL run/pipeline reports.
+- [x] Create reporting views where useful.
+- [x] Add indexes only when query use or measurements justify them.
+- [x] Inspect relevant query plans and save reproducible examples where useful.
+- [x] Document definitions, filters, currency rules, and known limitations.
+- [x] Compare query output to expected fixture results.
 
-**Exit criteria:** Required SQL reports run against known test data and return verified results; metric definitions prevent misleading totals.
+**Exit criteria:** Required SQL reports run against known test data and return verified results; metric definitions prevent misleading totals. (Verified: Dedicated `reporting` schema created in `sql/05_reporting_views.sql` with 7 conformed analytical views; SQL report pack updated in `sql/04_analytics_queries.sql`; `docs/metric_definitions.md` updated from planned draft to verified contract; `docs/data_dictionary.md` updated with full view schemas; `bankflow report` CLI command implemented; 11 new PostgreSQL integration tests in `tests/test_analytics_integration.py` pass against known-answer fixtures; EXPLAIN query plans verified; full test suite passes with 78 tests, zero failures, zero skips against bankflow_test).
 
 ## Phase 5 — Dashboard
 
