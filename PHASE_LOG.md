@@ -4,15 +4,14 @@
 
 ## Current Status
 
-- Overall status: `RELEASE READY — BankFlow CLI & Dimensional Warehouse Release Candidate`
-- Current phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation (Completed & Release-Packaged)`
-- Last approved implementation phase: `Phase 2 — Validation, Quarantine, and Data Contracts (Approved at commit d4e3c02)`
+- Overall status: `RELEASE MERGED & VERIFIED — BankFlow CLI & Dimensional Warehouse Release`
+- Current phase: `Release Complete — Hotfix Merged (PR #4 at e30750d)`
+- Last approved implementation phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation (Merged into main)`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 - Baseline commit: `cc2b371`
-- Latest reviewed head: `b92c3cc`
-- Corrective replay/concurrency commits: `558b002`, `cdb4ea8`
-- Branch: `phase/3-warehouse-loading`
-- Release target: `main`
+- Latest main commit: `e30750d`
+- Release PR: PR #3 (`4991e30`) & Hotfix PR: PR #4 (`e30750d`)
+- Branch: `main`
 
 ## How to Maintain This File
 
@@ -435,7 +434,40 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - All 6 SQL analytics queries executed and returned valid results.
   - Full automated suite passes with mandatory integration tests.
 - Known limitations: BI dashboard (Power BI/Metabase) and cloud scheduling/managed deployment are deferred for future roadmap phases.
-- Next action: Commit release changes, push to `phase/3-warehouse-loading`, open PR into `main`, and merge after CI verification.
+- Next action: Completed. Release PR #3 merged into main at 4991e30; followed by P0 hotfix PR #4 merged at e30750d.
+
+### Antigravity Hotfix — CI Test Failure Reporting & Date Dimension Alignment
+
+- Status: VERIFIED & MERGED
+- Date: 2026-10-17
+- Branch: hotfix/ci-test-failure-reporting (merged into main)
+- Commit SHA: 8dd69a5 (hotfix branch) / e30750d (main merge commit)
+- Pull Request: PR #4 (<https://github.com/GouravSharma26/BankFlow/pull/4>)
+- GitHub CI Run (PR #4): <https://github.com/GouravSharma26/BankFlow/actions/runs/39003312333> (SUCCESS, 67 passed in 4.25s)
+- GitHub CI Run (main): <https://github.com/GouravSharma26/BankFlow/actions/runs/39003397068> (SUCCESS, 67 passed in 3.71s)
+- Push status: Pushed to `origin/hotfix/ci-test-failure-reporting`, merged into `origin/main` via PR #4
+- Objective: Fix date dimension SQL parameter count mismatch in `_ensure_batch_dates_covered` and ensure CI immediately fails on real pytest failures with robust pipefail and always-uploaded test artifacts.
+- Changes delivered:
+  1. `src/bankflow/warehouse/loader.py`: Corrected `_ensure_batch_dates_covered` parameter tuple to `(min_date, max_date)` matching the 2 `%s` placeholders in `FROM generate_series(%s::DATE, %s::DATE, '1 day'::INTERVAL) d`. Resolves `TypeError: not all arguments converted during string formatting` in `test_warehouse_extended_date_dimension_support`.
+  2. `.github/workflows/ci.yml`:
+     - Removed `continue-on-error: true` from the pytest test step.
+     - Removed misleading JUnit root-attribute evaluator that masked test failures.
+     - Enforced `set -euo pipefail` on `python -m pytest tests -v --tb=short --junitxml=pytest-junit.xml 2>&1 | tee pytest.log` so any failure immediately fails the step.
+     - Preserved `if: always()` on `Upload test artifacts` ensuring `pytest.log` and `pytest-junit.xml` are always uploaded on failure or success.
+     - Added `"hotfix/**"` to push branch triggers.
+  3. `.gitignore`: Added `pytest.log`, `pytest-junit.xml`, and `.playwright-mcp/` to ignored files.
+  4. `RELEASE_CHECKLIST.md`: Updated checklist to reflect merged PR state and verified hotfix handoff.
+- Tests/commands executed:
+  - `python -m pytest tests/test_warehouse_integration.py::test_warehouse_extended_date_dimension_support -v` (PASSED against PostgreSQL test db after resetting date range)
+  - Full automated suite: `powershell -Command "$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS='1'; python -m pytest tests -v --tb=short --junitxml=pytest-junit.xml"` (67 passed, 0 skipped, 0 failed in 267.87s)
+  - `git diff --check` (clean, 0 warnings/errors)
+  - GitHub Actions CI (PR #4): 67 passed, 0 skipped, 0 failed in 4.25s
+  - GitHub Actions CI (main): 67 passed, 0 skipped, 0 failed in 3.71s
+- Acceptance evidence:
+  - PR #4 CI run <https://github.com/GouravSharma26/BankFlow/actions/runs/39003312333> verified green with all 67 tests passing.
+  - Main merge CI run <https://github.com/GouravSharma26/BankFlow/actions/runs/39003397068> verified green with all 67 tests passing.
+- Known limitations: BI dashboard (Power BI/Metabase) and cloud scheduling/managed deployment are deferred for post-resume roadmap phases.
+- Next action: Repository release is complete and verified on `main`. Proceed to subsequent roadmap phases only upon explicit user request.
 
 ## Phase Entry Template
 
