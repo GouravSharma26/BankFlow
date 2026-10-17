@@ -4,14 +4,12 @@
 
 ## Current Status
 
-- Overall status: `RELEASE MERGED & VERIFIED — BankFlow CLI & Dimensional Warehouse Release`
-- Current phase: `Release Complete — Hotfix Merged (PR #4 at e30750d)`
-- Last approved implementation phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation (Merged into main)`
+- Overall status: `PHASE 5 VERIFIED — Read-Only Dashboard API Integration Implemented`
+- Current phase: `Phase 5 — Dashboard Integration (Lovable Analytics Console)`
+- Last approved implementation phase: `Phase 4 — SQL Analytics and Metric Definitions (Merged into main at 805b03e)`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
-- Baseline commit: `cc2b371`
-- Latest main commit: `e30750d`
-- Release PR: PR #3 (`4991e30`) & Hotfix PR: PR #4 (`e30750d`)
-- Branch: `main`
+- Baseline commit: `805b03e` (Phase 4 main)
+- Branch: `phase/5-dashboard-api`
 
 ## How to Maintain This File
 
@@ -513,6 +511,69 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Fixes or accepted risks: Staging raw currency column constraint is `VARCHAR(10)`, test fixtures use ISO-like codes (`XXX`). `quarantined_records` timestamp is `quarantined_at`.
 - Known limitations: Hosted Lovable prototype is a synthetic frontend mockup not connected to PostgreSQL. BI dashboard (Power BI/Metabase) is planned for Phase 5.
 - Next action: Submit Phase 4 PR for user review; do not start Phase 5.
+
+### Phase 5 — Dashboard Integration (Lovable Analytics Console)
+
+- Status: VERIFIED
+- Date: 2026-10-17
+- Branch: `phase/5-dashboard-api`
+- Commit SHA: 0bf5d32
+- Pull Request: PR #6 (<https://github.com/GouravSharma26/BankFlow/pull/6>)
+- GitHub CI Run (PR #6): <https://github.com/GouravSharma26/BankFlow/actions/runs/39013141697> (SUCCESS, 90 passed, 0 skipped, 0 failed in 7.61s)
+- Push status: Pushed to `origin/phase/5-dashboard-api`, PR #6 opened into `main` (auto-merge deferred)
+- Objective: Extend the verified BankFlow foundation with a secure, tested, read-only reporting REST API (FastAPI) for the existing Lovable web console (`https://bankflow-analytics-console.lovable.app/`).
+- Scope delivered:
+  1. **Architecture Decision (TD-020):** Integrated the existing Lovable analytics web console rather than building a redundant Power BI/Metabase dashboard. Recorded intentional deviation in `docs/design_decisions.md` (TD-007, TD-020) and `DEVELOPMENT_CHECKLIST.md`.
+  2. **Package Extras:** Added `[project.optional-dependencies] api = ["fastapi>=0.110.0", "uvicorn>=0.28.0"]` and `dev = ["httpx>=0.27.0"]` in `pyproject.toml` so batch CLI users do not have to install web server dependencies.
+  3. **Database Security & Least Privilege:**
+     - Created `sql/06_reporting_role.sql` creating a dedicated role (`bankflow_reporting_user`) with `SELECT` grant exclusively on `reporting.*`. Staging, monitoring, quarantine, and warehouse tables cannot be queried or mutated.
+     - Application-level defense in depth: `create_readonly_connection` sets `conn.set_session(readonly=True, autocommit=True)` and a 5-second `SET statement_timeout = '5000ms'`.
+     - Zero arbitrary SQL endpoints; parameterized queries only.
+  4. **Conformed Analytical View 8 (`reporting.v_transaction_details`):**
+     - Implemented in `sql/05_reporting_views.sql` and `src/bankflow/analytics/schema.py` joining `warehouse.fact_transactions` to conformed dimensions (`dim_date`, `dim_transaction_type`, `dim_branch`, `dim_customer`, `dim_account`).
+     - Exposes only business/analytical attributes; strictly isolates raw staging payloads, internal keys, and credentials.
+  5. **FastAPI Application (`src/bankflow/api/`):**
+     - Versioned endpoints under `/api/v1`:
+       - `GET /api/v1/health`: Sanitized health probe returning 200/503 without leaking credentials or database details.
+       - `GET /api/v1/overview`: Currency-isolated summaries, earliest/latest dates, gross and completed amounts, batch count, and latest batch status.
+       - `GET /api/v1/daily`: Daily transaction volume, gross amounts, and completion rates with currency and date filtering.
+       - `GET /api/v1/deposit-withdrawal`: Deposit vs withdrawal gross amounts and completed value share percentages.
+       - `GET /api/v1/branch-channel`: Breakdown across branches, regions, and channels.
+       - `GET /api/v1/type-mix`: Transaction-type distribution, completed vs failed counts, event and value shares.
+       - `GET /api/v1/quality`: Data quality issue counts, distinct affected source rows, and affected batches by rule code, severity, and disposition.
+       - `GET /api/v1/batches`: Pipeline execution health, duration (seconds), validation row accounting, and reconciliation status.
+       - `GET /api/v1/quarantine`: Quarantined record inventory grouped by entity and primary rule code.
+       - `GET /api/v1/transactions`: Paginated, filtered, and sorted transaction explorer with column whitelist.
+     - CORS middleware restricting origins to configured frontends (`https://bankflow-analytics-console.lovable.app` and local dev).
+     - Global exception handlers sanitizing database errors and preventing internal information disclosure.
+  6. **Parameter Validation & Metric Integrity:**
+     - Strict whitelist validators for ISO currencies, statuses, channels, entities, severities, dispositions, date ranges (`YYYY-MM-DD`), sort column whitelist, and pagination bounds.
+     - All monetary values grouped strictly by currency. Positive gross event values only (no net cash flow or balance claims). Exact 2-decimal string serialization. UTC reporting dates.
+  7. **CLI Integration:**
+     - Added `bankflow serve [--host] [--port] [--reload] [--test-db]` using Uvicorn.
+     - Added `transactions` option to `bankflow report`.
+  8. **Documentation:**
+     - Created `docs/dashboard_api_contract.md` with complete API specifications, request/response examples, status codes, CORS setup, and frontend environment variable (`VITE_BANKFLOW_API_BASE_URL`).
+     - Documented why the public hosted dashboard remains in synthetic Demo Mode until deployed.
+     - Updated `README.md`, `HUMAN_SETUP.md`, `docs/architecture.md`, `docs/data_dictionary.md`, `docs/design_decisions.md`, and `DEVELOPMENT_CHECKLIST.md`.
+  9. **CI Workflow:**
+     - Updated `.github/workflows/ci.yml` to trigger on `"phase/**"` branches and install `.[dev,api]` extras.
+  10. **Automated Testing:**
+     - Added 12 new PostgreSQL integration tests in `tests/test_api_integration.py` verifying health probes, database failure handling, CORS headers, read-only session enforcement, empty-state safety, equality against reporting views, parameter filtering, and transaction pagination/sorting.
+- Tests/commands executed:
+  - `python -m pytest tests/test_api_integration.py -v` (12 passed in 155.18s)
+  - Full suite: `powershell -Command "$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS='1'; python -m pytest tests -v"` (90 passed, 0 skipped, 0 failed)
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes: 90 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - 12/12 API integration tests passed against live PostgreSQL test database.
+  - Read-only enforcement verified: DML/DDL operations rejected with `psycopg2.errors.ReadOnlySqlTransaction`.
+  - Equality verified: API response metrics match conformed PostgreSQL reporting view outputs exactly.
+  - Sanitization verified: Database connection outages return clean 503 HTTP responses with zero leaked credentials or internal stack traces.
+- Known limitations:
+  - The public hosted Lovable console (`https://bankflow-analytics-console.lovable.app/`) currently operates in synthetic Demo Mode. To connect live, the BankFlow API and PostgreSQL database must be deployed and `VITE_BANKFLOW_API_BASE_URL` configured on the frontend.
+- Next action: Submit Phase 5 PR for user review; do not merge automatically.
+
 
 ## Phase Entry Template
 

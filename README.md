@@ -19,12 +19,14 @@ BankFlow is a Python and PostgreSQL portfolio project demonstrating an end-to-en
 | Area | Technology |
 |---|---|
 | Language / CLI | Python 3.12+, Click |
+| API Layer | FastAPI, Uvicorn (optional extra `[api]`) |
 | Database | PostgreSQL 17 |
 | Data access | psycopg2 |
 | Configuration | python-dotenv and environment variables |
 | Local database | Docker Compose |
 | Automated testing | pytest and PostgreSQL integration tests |
 | Analytics | SQL over a dimensional warehouse |
+| Dashboard Frontend | Lovable Analytics Console (Web App) |
 
 ## Quickstart — Windows PowerShell
 
@@ -36,7 +38,7 @@ Prerequisites: Python 3.12, Docker Desktop with Compose, and Git.
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,api]"
 ```
 
 ### 2. Configure and start PostgreSQL
@@ -83,7 +85,8 @@ Run `python -m bankflow --help` for the installed command list.
 | `reconcile BATCH_ID` | Audit counts and monetary totals |
 | `run` | Run staging, validation, loading, and reconciliation in one command |
 | `batch-status BATCH_ID` | Inspect batch metrics and data-quality issue counts |
-| `report REPORT_NAME` | Query conformed reporting views (`daily`, `deposit-withdrawal`, `branch-channel`, `type-mix`, `quality`, `batches`, `quarantine`) |
+| `report REPORT_NAME` | Query conformed reporting views (`daily`, `deposit-withdrawal`, `branch-channel`, `type-mix`, `quality`, `batches`, `quarantine`, `transactions`) |
+| `serve` | Start read-only FastAPI reporting server for dashboard console |
 | `init-db` | Initialize staging, monitoring, quarantine, warehouse, and reporting schemas |
 | `test-connection` | Verify database connectivity without logging credentials |
 
@@ -113,6 +116,7 @@ python -m bankflow report type-mix
 python -m bankflow report quality
 python -m bankflow report batches
 python -m bankflow report quarantine
+python -m bankflow report transactions --limit 5
 ```
 
 To run the raw SQL reporting queries from the repository root with a local `psql` client:
@@ -125,6 +129,23 @@ psql "postgresql://postgres:postgres@localhost:5432/bankflow" -v ON_ERROR_STOP=1
 - All reports group strictly by currency. Do not add different currencies together without an explicit FX-conversion policy.
 - All transaction values represent gross positive event amounts; do not interpret gross event sums as net cash flow or account balances.
 - Completed metrics filter strictly on `COMPLETED` transaction status. Reversals are tracked as discrete transaction events rather than destructive modifications.
+
+## Dashboard Console Integration
+
+BankFlow integrates with an external web console deployed at [`https://bankflow-analytics-console.lovable.app/`](https://bankflow-analytics-console.lovable.app/):
+
+1. **Start the read-only reporting API locally:**
+   ```powershell
+   python -m bankflow serve --host 127.0.0.1 --port 8000
+   ```
+2. **Access interactive API docs:**
+   Navigate to `http://127.0.0.1:8000/docs` in your browser.
+3. **Frontend Connection Contract:**
+   The frontend connects via the public environment variable:
+   ```bash
+   VITE_BANKFLOW_API_BASE_URL=http://localhost:8000
+   ```
+   > **Note on Demo Mode:** The public hosted dashboard operates in synthetic Demo Mode by default until pointed to a running, deployed BankFlow API server. For details on endpoints, security controls, and schemas, consult [`docs/dashboard_api_contract.md`](docs/dashboard_api_contract.md).
 
 ## Architecture
 
@@ -141,13 +162,20 @@ Validation engine ------> Data-quality issues + quarantine
 Conformed dimensions + transaction facts (PostgreSQL star schema)
        |
        v
-Count/value reconciliation + reporting SQL
+Reporting Views (PostgreSQL `reporting` schema)
+       |
+       +---> Python CLI (`bankflow report`)
+       |
+       +---> Read-Only FastAPI (`bankflow serve`)
+                   |
+                   v
+             Lovable Analytics Console
 ```
 
-Further details: [architecture](docs/architecture.md) · [data contract](docs/data_contract.md) · [data dictionary](docs/data_dictionary.md) · [quality rules](docs/data_quality_rules.md) · [metric definitions](docs/metric_definitions.md) · [testing strategy](docs/testing_strategy.md) · [developer setup](HUMAN_SETUP.md) · [development checklist](DEVELOPMENT_CHECKLIST.md).
+Further details: [architecture](docs/architecture.md) · [dashboard API contract](docs/dashboard_api_contract.md) · [data contract](docs/data_contract.md) · [data dictionary](docs/data_dictionary.md) · [quality rules](docs/data_quality_rules.md) · [metric definitions](docs/metric_definitions.md) · [testing strategy](docs/testing_strategy.md) · [developer setup](HUMAN_SETUP.md) · [development checklist](DEVELOPMENT_CHECKLIST.md).
 
 ## Deployment notes and limitations
 
-The repeatable local deployment uses Docker Compose for PostgreSQL and the installed Python CLI. A scheduled/cloud deployment can run the CLI as a batch job with database credentials supplied through environment variables or `DATABASE_URL`; keep secrets out of source control. This repository does **not** currently provide a hosted HTTP endpoint or BI dashboard. Add cloud scheduling, a managed database, monitoring, and a dashboard as separate steps rather than describing them as already deployed.
+The repeatable local deployment uses Docker Compose for PostgreSQL and the installed Python CLI and FastAPI server. A scheduled/cloud deployment can run the CLI as a batch job with database credentials supplied through environment variables or `DATABASE_URL`; keep secrets out of source control. This repository provides a local read-only HTTP API endpoint designed to integrate with the Lovable dashboard console. The public hosted dashboard remains in synthetic demo mode until a persistent backend API and PostgreSQL database are hosted in the cloud.
 
 Use synthetic datasets only. Never commit `.env`, credentials, or real banking/customer data.

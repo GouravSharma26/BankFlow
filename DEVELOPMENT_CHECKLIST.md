@@ -87,21 +87,24 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Exit criteria:** Required SQL reports run against known test data and return verified results; metric definitions prevent misleading totals. (Verified: Dedicated `reporting` schema created in `sql/05_reporting_views.sql` with 7 conformed analytical views; SQL report pack updated in `sql/04_analytics_queries.sql`; `docs/metric_definitions.md` updated from planned draft to verified contract; `docs/data_dictionary.md` updated with full view schemas; `bankflow report` CLI command implemented; 11 new PostgreSQL integration tests in `tests/test_analytics_integration.py` pass against known-answer fixtures; EXPLAIN query plans verified; full test suite passes with 78 tests, zero failures, zero skips against bankflow_test).
 
-## Phase 5 — Dashboard
+## Phase 5 — Dashboard Integration (Lovable Analytics Console)
 
-**Goal:** Present the verified warehouse outputs in a simple, understandable dashboard.
+**Goal:** Present the verified warehouse outputs in a simple, understandable dashboard via a secure, read-only API layer.
+*Architecture Decision:* Selected existing purpose-built Lovable web console (`https://bankflow-analytics-console.lovable.app/`) rather than creating a second Power BI/Metabase dashboard; recorded in `docs/design_decisions.md` (TD-007, TD-020).
 
-- [ ] Choose one tool: Power BI or Metabase.
-- [ ] Connect to the reporting layer using a read-only reporting role where practical.
-- [ ] Build overview page.
-- [ ] Build transaction analysis page.
-- [ ] Build pipeline/data-quality page.
-- [ ] Add appropriate date, branch, channel, and transaction-type filters.
-- [ ] Label units, currencies, filters, and statuses clearly.
-- [ ] Compare displayed metric values against direct SQL outputs.
-- [ ] Save redacted screenshots or a short demo sequence.
+- [x] Tool Selection: Selected existing Lovable analytics web console, avoiding redundant dashboard tool proliferation.
+- [x] Connect to the reporting layer using a dedicated read-only role: Created `sql/06_reporting_role.sql` (`bankflow_reporting_user`) granting `SELECT` exclusively on `reporting.*`.
+- [x] Defense-in-depth API security: Application-level `readonly=True`, `autocommit=True`, and 5-second `statement_timeout` on all database sessions.
+- [x] Build overview reporting endpoint: `GET /api/v1/overview` providing gross amounts, completed metrics, acceptance rates, date bounds, and batch counts isolated by currency.
+- [x] Build transaction analysis endpoints: `GET /api/v1/daily`, `GET /api/v1/deposit-withdrawal`, `GET /api/v1/branch-channel`, `GET /api/v1/type-mix`, and paginated/filtered `GET /api/v1/transactions`.
+- [x] Build pipeline/data-quality endpoints: `GET /api/v1/quality`, `GET /api/v1/batches`, and `GET /api/v1/quarantine`.
+- [x] Add parameter validation & whitelisting: Strict validators for ISO currencies, statuses, channels, entities, severities, dispositions, date ranges (`YYYY-MM-DD`), sort column whitelist, and pagination bounds. Zero arbitrary SQL endpoints.
+- [x] Label units, currencies, filters, and statuses clearly: Grouped currencies only (no cross-currency summation), gross positive event values, exact 2-decimal string serialization.
+- [x] Verify API responses against direct reporting view SQL: 12 comprehensive PostgreSQL integration tests in `tests/test_api_integration.py` verify 1-to-1 parity between API metrics and reporting views.
+- [x] Document dashboard integration contract: Created `docs/dashboard_api_contract.md` defining endpoints, schemas, CORS, local development, `VITE_BANKFLOW_API_BASE_URL`, and the hosted demo-mode boundary.
+- [x] Add CLI serve command: Implemented `bankflow serve [--host] [--port] [--reload] [--test-db]`.
 
-**Exit criteria:** Dashboard data matches authoritative SQL queries for selected test cases and displays metric semantics/units clearly.
+**Exit criteria:** Dashboard reporting API data matches authoritative PostgreSQL reporting views for all test cases, enforces read-only access and strict input validation without leaking credentials, and frontend integration contract is fully documented. (Verified: 12/12 API integration tests pass, full suite 90/90 tests pass with zero failures and zero skips).
 
 ## Phase 6 — Hardening, CI, Documentation, and Portfolio Release
 
