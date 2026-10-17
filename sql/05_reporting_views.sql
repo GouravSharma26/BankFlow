@@ -157,3 +157,33 @@ SELECT
     MAX(q.quarantined_at) AS last_quarantined_at
 FROM quarantine.quarantined_records AS q
 GROUP BY q.batch_id, q.entity_type, q.primary_rule_code;
+
+-- 8. Transaction Details
+-- Grain: 1 row per accepted transaction event in the warehouse.
+-- Narrowly scoped conformed view for transaction search, filtering, and detail displays.
+CREATE OR REPLACE VIEW reporting.v_transaction_details AS
+SELECT
+    f.transaction_id,
+    f.source_system,
+    da.account_id,
+    dc.customer_id,
+    db.branch_id,
+    db.branch_name,
+    db.region,
+    t.transaction_type_code AS transaction_type,
+    t.transaction_type_name AS type_name,
+    t.transaction_family,
+    f.amount,
+    f.currency,
+    f.status,
+    f.channel,
+    f.transaction_timestamp,
+    d.full_date AS reporting_date,
+    f.source_batch_id AS batch_id,
+    f.loaded_at
+FROM warehouse.fact_transactions AS f
+JOIN warehouse.dim_date AS d ON d.date_key = f.date_key
+JOIN warehouse.dim_transaction_type AS t ON t.type_key = f.type_key
+JOIN warehouse.dim_account AS da ON da.account_key = f.account_key
+JOIN warehouse.dim_customer AS dc ON dc.customer_key = f.customer_key
+JOIN warehouse.dim_branch AS db ON db.branch_key = f.branch_key;

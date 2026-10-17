@@ -380,7 +380,8 @@ def batch_status_cmd(batch_id: str, test_db: bool):
     "type-mix",
     "quality",
     "batches",
-    "quarantine"
+    "quarantine",
+    "transactions",
 ], case_sensitive=False))
 @click.option("--currency", "-c", default=None, help="Filter results by ISO currency (e.g. USD, EUR).")
 @click.option("--limit", "-n", default=25, show_default=True, type=int, help="Maximum number of rows to return.")
@@ -398,6 +399,7 @@ def report_cmd(name: str, currency: Optional[str], limit: int, test_db: bool):
         "quality": ("reporting.v_data_quality_summary", "issue_count DESC, rule_code", False),
         "batches": ("reporting.v_pipeline_execution_health", "started_at DESC NULLS LAST", False),
         "quarantine": ("reporting.v_quarantine_inventory", "quarantined_rows DESC, batch_id, entity_type", False),
+        "transactions": ("reporting.v_transaction_details", "transaction_timestamp DESC, transaction_id", True),
     }
 
     view_name, default_order, has_currency = view_map[name.lower()]
@@ -431,6 +433,37 @@ def report_cmd(name: str, currency: Optional[str], limit: int, test_db: bool):
     except Exception as ex:
         click.secho(f"[ERROR] Report generation failed: {ex}", fg="red")
         sys.exit(1)
+
+
+@cli.command("serve")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Host network interface to bind the API server.")
+@click.option("--port", default=8000, show_default=True, type=int, help="Port to bind the API server.")
+@click.option("--reload", is_flag=True, help="Enable auto-reload on code change.")
+@click.option("--test-db", is_flag=True, help="Serve API against dedicated test database instead of primary.")
+def serve_cmd(host: str, port: int, reload: bool, test_db: bool):
+    """Start the read-only reporting API server for BankFlow Dashboard."""
+    try:
+        import uvicorn
+        from bankflow.api.app import create_app
+        from bankflow.config import get_settings
+    except ImportError:
+        click.secho(
+            "[ERROR] FastAPI and Uvicorn are required to run the reporting API.\n"
+            "Install optional web dependencies with:\n"
+            "    pip install -e \".[api]\"",
+            fg="red",
+        )
+        sys.exit(1)
+
+    settings = get_settings()
+    db_config = settings.test_db if test_db else settings.db
+
+    click.secho(f"Starting BankFlow Read-Only Reporting API on http://{host}:{port}...", fg="cyan", bold=True)
+    click.echo(f"Connected to database '{db_config.name}' on {db_config.host}:{db_config.port} (Read-Only mode)")
+    click.echo("Interactive API documentation available at: /docs")
+
+    app = create_app(db_config=db_config, use_test_db=test_db)
+    uvicorn.run(app, host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":

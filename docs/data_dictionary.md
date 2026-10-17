@@ -446,6 +446,32 @@ Purpose/grain: one accepted transaction event under the defined source event ide
 | `first_quarantined_at` | `TIMESTAMPTZ` | Yes | `MIN(quarantined_at)` | Earliest quarantine timestamp |
 | `last_quarantined_at` | `TIMESTAMPTZ` | Yes | `MAX(quarantined_at)` | Latest quarantine timestamp |
 
+### 6.8 `reporting.v_transaction_details`
+- **Schema / View:** `reporting.v_transaction_details`
+- **Purpose / Grain:** Detailed conformed transaction facts joined with dimensional attributes for the dashboard Transactions explorer. Exposes only analytical attributes; strictly isolates raw staging payloads, internal keys, and credentials. Grain: One row per loaded fact transaction (`transaction_key`).
+- **Underlying Tables:** `warehouse.fact_transactions`, `warehouse.dim_date`, `warehouse.dim_transaction_type`, `warehouse.dim_branch`, `warehouse.dim_customer`, `warehouse.dim_account`.
+
+| Column | PostgreSQL type | Nullable? | Source / derivation | Meaning |
+|---|---|---|---|---|
+| `transaction_key` | `BIGINT` | No | `fact_transactions.transaction_key` | Fact transaction surrogate primary key |
+| `transaction_id` | `VARCHAR(64)` | No | `fact_transactions.transaction_id` | Source transaction identifier |
+| `transaction_timestamp` | `TIMESTAMPTZ` | No | `fact_transactions.transaction_timestamp` | Event timestamp in UTC |
+| `reporting_date` | `DATE` | No | `dim_date.full_date` | Conformed UTC reporting date |
+| `transaction_type` | `VARCHAR(32)` | No | `dim_transaction_type.transaction_type_code` | Transaction business type |
+| `transaction_family` | `VARCHAR(32)` | No | `dim_transaction_type.transaction_family` | Accounting family classification |
+| `amount` | `NUMERIC(18, 2)` | No | `fact_transactions.amount` | Positive gross transaction amount |
+| `currency` | `VARCHAR(10)` | No | `fact_transactions.currency` | ISO currency code |
+| `status` | `VARCHAR(32)` | No | `fact_transactions.status` | Transaction status (COMPLETED, PENDING, FAILED, REVERSED) |
+| `channel` | `VARCHAR(32)` | No | `fact_transactions.channel` | Initiation channel (ONLINE, MOBILE, ATM, BRANCH) |
+| `branch_id` | `VARCHAR(64)` | No | `dim_branch.branch_id` | Originating branch identifier |
+| `branch_name` | `VARCHAR(128)` | No | `dim_branch.branch_name` | Originating branch facility name |
+| `region` | `VARCHAR(64)` | No | `dim_branch.region` | Branch administrative region |
+| `customer_id` | `VARCHAR(64)` | No | `dim_customer.customer_id` | Transacting customer identifier |
+| `customer_segment` | `VARCHAR(32)` | No | `dim_customer.customer_segment` | Customer segment (RETAIL, PREMIUM, etc.) |
+| `account_id` | `VARCHAR(64)` | No | `dim_account.account_id` | Primary transacting account identifier |
+| `account_type` | `VARCHAR(32)` | No | `dim_account.account_type` | Account type (CHECKING, SAVINGS) |
+| `batch_id` | `VARCHAR(64)` | No | `fact_transactions.batch_id` | Ingestion batch lineage identifier |
+
 ## 7. Change Control
 
 Every schema change should update the SQL initialization/migration, data-access code, tests, and this dictionary. A phase is not complete if the database schema and dictionary disagree.

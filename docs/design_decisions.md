@@ -12,7 +12,7 @@
 | TD-004 | Monetary representation | Python `Decimal` + PostgreSQL `NUMERIC` | Accepted | Avoid binary floating-point rounding in monetary calculations. |
 | TD-005 | Testing | pytest | Accepted | Allows unit, database integration, and end-to-end verification. |
 | TD-006 | CI | GitHub Actions | Planned | Makes tests visible and repeatable on code changes. |
-| TD-007 | Dashboard | Choose Power BI or Metabase | Open | Decide once based on environment/access; do not build both in MVP. |
+| TD-007 | Dashboard | Lovable Analytics Console (Web App) | Accepted | Selected purpose-built Lovable web console rather than creating a second Power BI/Metabase dashboard; recorded in TD-020. |
 | TD-008 | Python DB access | psycopg2-binary | Accepted | Direct, high-performance SQL execution and batch staging with zero ORM overhead. |
 | TD-009 | Orchestration | Manual CLI first (Click) | Accepted | Prove correctness before introducing scheduler complexity. |
 | TD-010 | Containerization | Docker Compose for local PostgreSQL | Accepted | Provides one-command local PostgreSQL 17 setup with primary and test databases. |
@@ -165,3 +165,15 @@ Append entries below rather than silently changing an existing decision.
 - Rationale: Views provide zero storage overhead, guaranteed real-time consistency with loaded batches, encapsulation of complex join logic, and a stable contract for downstream dashboards/BI or API consumers.
 - Consequences / trade-offs: Query execution time depends on base table indexing. Database indices on `dim_date`, `dim_transaction_type`, `dim_branch`, and `fact_transactions` foreign keys provide index scans without speculative indexing.
 - Verification or evidence: Verified via 11 integration tests in `tests/test_analytics_integration.py` executing all 7 views against deterministic known-answer datasets and asserting metric precision.
+
+### TD-020 — Read-Only Reporting API for Lovable Web Console
+- Date / phase: 2026-10-17 / Phase 5
+- Status: Accepted
+- Context: BankFlow required a dashboard frontend for business reporting and pipeline monitoring. An existing purpose-built web console was deployed at `https://bankflow-analytics-console.lovable.app/` using synthetic sample data. The original plan noted Power BI or Metabase (TD-007).
+- Options considered:
+  1. Build a separate Power BI / Metabase dashboard from scratch: requires proprietary software or heavyweight server instances, redundant given the existing web console.
+  2. Implement a secure, read-only REST API (FastAPI) serving the conformed PostgreSQL `reporting` schema to the Lovable console.
+- Decision: Select the Lovable web console as the canonical frontend, connected via a dedicated read-only FastAPI service (`src/bankflow/api`).
+- Rationale: Avoids duplicating dashboard tools, provides a clean decoupled architecture (browser frontend -> read-only REST API -> PostgreSQL reporting views), enforces least-privilege database roles, eliminates credential exposure, and provides a clear integration contract via `VITE_BANKFLOW_API_BASE_URL`.
+- Consequences / trade-offs: Requires a lightweight API runtime (`pip install -e ".[api]"`), packaged as an optional extra so batch CLI users need not install FastAPI or Uvicorn. The public hosted frontend remains in synthetic demo mode until the backend API and database are deployed.
+- Verification or evidence: Verified via 12 PostgreSQL integration tests in `tests/test_api_integration.py` validating read-only session enforcement, response schemas, and equality against `reporting` views.

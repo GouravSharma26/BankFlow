@@ -2,7 +2,7 @@ name: BankFlow CI
 
 on:
   push:
-    branches: [main, phase/3-warehouse-loading, "hotfix/**"]
+    branches: [main, "phase/**", "hotfix/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -54,7 +54,7 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install package and test dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev,api]"
 
       - name: Create isolated integration-test database
         run: |

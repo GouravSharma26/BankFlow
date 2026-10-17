@@ -92,7 +92,7 @@ Use a dimensional design with a central transaction fact and descriptive dimensi
 
 ### 3.7 Reporting
 
-The reporting layer resides in the dedicated `reporting` PostgreSQL schema and provides conformed analytical views built directly over the star schema warehouse, monitoring, and quarantine tables. These views establish the single authoritative source of truth for downstream reports, CLI utilities, and future business intelligence tools (Power BI/Metabase).
+The reporting layer resides in the dedicated `reporting` PostgreSQL schema and provides conformed analytical views built directly over the star schema warehouse, monitoring, and quarantine tables. These views establish the single authoritative source of truth for downstream reports, CLI utilities, and the dashboard API.
 
 Implemented views:
 - `reporting.v_daily_transaction_summary`: Daily volume, gross event value, and completed/failed counts by UTC date and currency.
@@ -102,6 +102,7 @@ Implemented views:
 - `reporting.v_data_quality_summary`: Multi-issue accounting distinguishing distinct quality defects, affected source rows, and impacted batches.
 - `reporting.v_pipeline_execution_health`: Batch execution status, lifecycle duration (seconds), validation efficiency, and reconciliation outcomes.
 - `reporting.v_quarantine_inventory`: Quarantined record inventory grouped by entity, primary rule code, and batch.
+- `reporting.v_transaction_details`: Conformed fact-to-dimension detail view for transaction exploration, strictly isolating raw staging payloads and credentials.
 
 Key reporting architectural rules:
 - **Currency Isolation**: All monetary amounts are strictly aggregated per currency; no cross-currency summation or synthetic FX conversion is permitted.
@@ -109,6 +110,17 @@ Key reporting architectural rules:
 - **UTC Date Standardization**: Reporting dates are derived directly from the immutable warehouse date dimension key (`dim_date.calendar_date`), preventing session timezone drift.
 - **Status & Reversal Explicitness**: Completed-event metrics filter strictly on `COMPLETED` status; reversals (`REVERSAL` transaction type or `REVERSED` status) are never naively subtracted as negative facts without explicit reporting models.
 - **Zero-Mutation Guarantee**: Analytical queries and reporting views are strictly read-only and have zero side-effects on staging or warehouse data.
+
+### 3.8 Dashboard API & Frontend Integration
+
+The dashboard integration layer connects the conformed `reporting` schema to the external web console (`https://bankflow-analytics-console.lovable.app/`):
+
+- **FastAPI Read-Only Backend**: A lightweight, versioned REST API (`src/bankflow/api`) under `/api/v1` exposing the 8 reporting views and health status. Packaged as an optional extra (`pip install -e ".[api]"`).
+- **Least-Privilege Database Role**: A dedicated PostgreSQL role (`bankflow_reporting_user`) with `SELECT` grant exclusively on `reporting.*`. Staging, quarantine, monitoring, and warehouse tables cannot be queried directly or mutated.
+- **Application Defense-in-Depth**: Every database session is explicitly configured with `readonly=True`, `autocommit=True`, and a 5-second `statement_timeout`.
+- **CORS Configuration**: Restricts browser cross-origin requests to configured origins (`https://bankflow-analytics-console.lovable.app`, local dev hosts).
+- **Zero-Secret Contract**: The API never accepts or returns credentials, connection strings, or raw customer data. The frontend is configured solely via a public base URL environment variable (`VITE_BANKFLOW_API_BASE_URL`).
+- **Demo Mode Boundary**: The hosted Lovable console operates in synthetic Demo Mode by default until pointed to an active, deployed BankFlow API instance.
 
 ## 4. Implemented Data Schemas
 

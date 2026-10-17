@@ -64,7 +64,7 @@ On Windows, create a virtual environment using the Python launcher or the instal
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,api]"
 ```
 
 If PowerShell blocks virtual-environment activation, use an allowed terminal configuration or invoke the virtual environment's Python directly. Do not weaken machine-wide execution policies just to run this project.
@@ -133,6 +133,24 @@ If PowerShell blocks virtual-environment activation, use an allowed terminal con
    ```powershell
    psql "postgresql://postgres:postgres@localhost:5432/bankflow" -v ON_ERROR_STOP=1 -f sql/04_analytics_queries.sql
    ```
+
+10. **Provision least-privilege reporting role:**
+    ```powershell
+    psql "postgresql://postgres:postgres@localhost:5432/bankflow" -f sql/06_reporting_role.sql
+    ```
+
+11. **Start read-only Reporting API:**
+    ```powershell
+    python -m bankflow serve --host 127.0.0.1 --port 8000
+    ```
+    *API Documentation:* Explore interactive OpenAPI documentation at `http://127.0.0.1:8000/docs`.
+
+12. **Connect Lovable Analytics Console:**
+    Configure the web application environment variable:
+    ```bash
+    VITE_BANKFLOW_API_BASE_URL=http://localhost:8000
+    ```
+    *Refer to `docs/dashboard_api_contract.md` for complete API and integration specifications.*
 
 ## 6. PostgreSQL safety checklist
 
