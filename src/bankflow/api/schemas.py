@@ -127,7 +127,7 @@ class QualitySummaryItem(BaseModel):
 
     rule_code: str = Field(..., description="Validation rule code")
     severity: str = Field(..., description="Issue severity (ERROR, WARNING, INFO)")
-    disposition: str = Field(..., description="Disposition outcome (REJECTED, QUARANTINED, SKIPPED, LOGGED)")
+    disposition: str = Field(..., description="Disposition outcome (ACCEPTED, REJECTED, WARNED, SKIPPED)")
     issue_count: int = Field(..., description="Individual quality issue records flagged")
     affected_source_rows: int = Field(..., description="Distinct source rows affected (zero double counting)")
     affected_batches: int = Field(..., description="Distinct batches impacted")

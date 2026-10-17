@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_app(
+    api_config: Optional[ApiConfig] = None,
     db_config: Optional[DatabaseConfig] = None,
     cors_origins: Optional[List[str]] = None,
     use_test_db: bool = False,
@@ -45,15 +46,12 @@ def create_app(
         redoc_url="/redoc",
     )
 
-    # Resolve database configuration
-    if db_config is None:
-        api_conf = ApiConfig.from_env(use_test_db=use_test_db)
-        app.state.db_config = api_conf.db_config
-        resolved_origins = list(cors_origins or api_conf.cors_origins)
-    else:
-        app.state.db_config = db_config
-        api_conf = ApiConfig.from_env(use_test_db=use_test_db)
-        resolved_origins = list(cors_origins or api_conf.cors_origins)
+    # Resolve configuration
+    if api_config is None:
+        api_config = ApiConfig.from_env(use_test_db=use_test_db)
+
+    app.state.db_config = db_config or api_config.db_config
+    resolved_origins = list(cors_origins or api_config.cors_origins)
 
     # CORS configuration — strictly permitted frontend origins
     app.add_middleware(

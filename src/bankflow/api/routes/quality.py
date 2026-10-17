@@ -18,7 +18,7 @@ router = APIRouter(prefix="/quality", tags=["Analytics"])
 @router.get("", response_model=List[QualitySummaryItem])
 def get_quality_summary(
     severity: Optional[str] = Query(None, description="Filter by severity (ERROR, WARNING, INFO)"),
-    disposition: Optional[str] = Query(None, description="Filter by disposition (REJECTED, QUARANTINED, SKIPPED, LOGGED)"),
+    disposition: Optional[str] = Query(None, description="Filter by disposition (ACCEPTED, REJECTED, WARNED, SKIPPED)"),
     limit: int = Query(50, ge=1, le=200, description="Maximum rows to return"),
     conn: psycopg2.extensions.connection = Depends(get_db),
 ) -> List[QualitySummaryItem]:

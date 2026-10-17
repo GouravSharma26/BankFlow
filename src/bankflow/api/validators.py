@@ -9,6 +9,9 @@ from datetime import date
 from typing import Optional, Set
 from fastapi import HTTPException, status
 
+from bankflow.constants import SUPPORTED_CURRENCIES, SUPPORTED_DISPOSITIONS
+from bankflow.validation.dates import parse_strict_date
+
 ISO_CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
 
 ALLOWED_STATUSES: Set[str] = {"COMPLETED", "PENDING", "FAILED", "REVERSED"}
@@ -16,7 +19,7 @@ ALLOWED_TRANSACTION_TYPES: Set[str] = {"DEPOSIT", "WITHDRAWAL", "TRANSFER", "PAY
 ALLOWED_CHANNELS: Set[str] = {"BRANCH", "ATM", "ONLINE", "MOBILE"}
 ALLOWED_ENTITY_TYPES: Set[str] = {"BRANCH", "CUSTOMER", "ACCOUNT", "TRANSACTION"}
 ALLOWED_SEVERITIES: Set[str] = {"ERROR", "WARNING", "INFO"}
-ALLOWED_DISPOSITIONS: Set[str] = {"REJECTED", "QUARANTINED", "SKIPPED", "LOGGED"}
+ALLOWED_DISPOSITIONS: Set[str] = set(SUPPORTED_DISPOSITIONS)
 ALLOWED_RECONCILIATION_STATUSES: Set[str] = {"RECONCILED", "UNRECONCILED", "DISCREPANCY_DETECTED"}
 
 
@@ -24,10 +27,10 @@ def validate_currency(currency: Optional[str]) -> Optional[str]:
     if not currency:
         return None
     curr = currency.strip().upper()
-    if not ISO_CURRENCY_PATTERN.match(curr):
+    if curr not in SUPPORTED_CURRENCIES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid currency '{currency}'. Expected 3-letter uppercase ISO currency code (e.g. USD, EUR, GBP).",
+            detail=f"Invalid currency '{currency}'. Supported currencies: {sorted(SUPPORTED_CURRENCIES)}.",
         )
     return curr
 
@@ -117,26 +120,26 @@ def validate_reconciliation_status(recon_status: Optional[str]) -> Optional[str]
 
 
 def validate_date_range(start_date_str: Optional[str], end_date_str: Optional[str]) -> tuple[Optional[date], Optional[date]]:
-    start_d = None
-    end_d = None
+    start_d: Optional[date] = None
+    end_d: Optional[date] = None
 
-    if start_date_str:
-        try:
-            start_d = date.fromisoformat(start_date_str.strip())
-        except ValueError:
+    if start_date_str is not None:
+        res = parse_strict_date(start_date_str)
+        if not res.is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid start_date '{start_date_str}'. Expected format: YYYY-MM-DD.",
+                detail=f"Invalid start_date '{start_date_str}'. Expected format: YYYY-MM-DD ({res.error_message}).",
             )
+        start_d = res.parsed_date
 
-    if end_date_str:
-        try:
-            end_d = date.fromisoformat(end_date_str.strip())
-        except ValueError:
+    if end_date_str is not None:
+        res = parse_strict_date(end_date_str)
+        if not res.is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid end_date '{end_date_str}'. Expected format: YYYY-MM-DD.",
+                detail=f"Invalid end_date '{end_date_str}'. Expected format: YYYY-MM-DD ({res.error_message}).",
             )
+        end_d = res.parsed_date
 
     if start_d and end_d and start_d > end_d:
         raise HTTPException(

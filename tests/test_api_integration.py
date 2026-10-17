@@ -251,6 +251,8 @@ def test_api_overview_matches_views(api_client, postgres_test_db, tmp_path):
     assert eur_metric["gross_transaction_amount"] == "245.00"
     assert eur_metric["completed_gross_amount"] == "245.00"
     assert eur_metric["acceptance_rate_pct"] == "100.00"
+    assert eur_metric["active_accounts"] == 1
+    assert eur_metric["active_customers"] == 1
 
     # USD summary: 5 txns, 3 completed, gross 230.00, completed 160.00 (100 + 30 + 30)
     usd_metric = next(m for m in data["metrics_by_currency"] if m["currency"] == "USD")
@@ -259,6 +261,8 @@ def test_api_overview_matches_views(api_client, postgres_test_db, tmp_path):
     assert usd_metric["gross_transaction_amount"] == "230.00"
     assert usd_metric["completed_gross_amount"] == "160.00"
     assert usd_metric["acceptance_rate_pct"] == "60.00"
+    assert usd_metric["active_accounts"] == 2
+    assert usd_metric["active_customers"] == 2
 
 
 @pytest.mark.integration
@@ -426,3 +430,138 @@ def test_api_transactions_pagination_and_sorting(api_client, postgres_test_db, t
     assert api_client.get("/api/v1/transactions?sort_by=secret").status_code == 400
     assert api_client.get("/api/v1/transactions?sort_order=sideways").status_code == 400
     assert api_client.get("/api/v1/transactions?status=NOT_A_STATUS").status_code == 400
+
+
+@pytest.mark.integration
+def test_api_overview_multiday_overlapping_entities(api_client, postgres_test_db, tmp_path):
+    """
+    Regression fixture for Finding 4:
+    Multi-day, same-currency dataset with overlapping accounts and customers across days.
+    Day 1 has 2 accounts, 2 customers.
+    Day 2 has 2 accounts (1 overlapping, 1 new), 2 customers (1 overlapping, 1 new).
+    Day 3 has 1 account (overlapping), 1 customer (overlapping).
+    Single-day MAX would incorrectly return 2.
+    Simple SUM would incorrectly return 5.
+    Period-wide distinct count must accurately return 3 accounts and 3 customers.
+    """
+    dataset_dir = tmp_path / f"multiday_test_data_{uuid.uuid4().hex[:6]}"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    (dataset_dir / "branches.csv").write_text(
+        "branch_id,branch_name,region\n"
+        "BR-01,Central,NORTH\n",
+        encoding="utf-8",
+    )
+
+    (dataset_dir / "customers.csv").write_text(
+        "customer_id,customer_segment,created_date,customer_status\n"
+        "CUST-01,RETAIL,2026-01-01,ACTIVE\n"
+        "CUST-02,PREMIUM,2026-01-02,ACTIVE\n"
+        "CUST-03,SMALL_BUSINESS,2026-01-03,ACTIVE\n",
+        encoding="utf-8",
+    )
+
+    (dataset_dir / "accounts.csv").write_text(
+        "account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\n"
+        "ACC-01,CUST-01,BR-01,CHECKING,OPEN,2026-01-01,USD\n"
+        "ACC-02,CUST-02,BR-01,SAVINGS,OPEN,2026-01-02,USD\n"
+        "ACC-03,CUST-03,BR-01,CHECKING,OPEN,2026-01-03,USD\n",
+        encoding="utf-8",
+    )
+
+    # 5 transactions across 3 consecutive days for USD:
+    # Day 1 (2026-03-10): ACC-01 (CUST-01), ACC-02 (CUST-02) -> 2 accts, 2 custs
+    # Day 2 (2026-03-11): ACC-02 (CUST-02), ACC-03 (CUST-03) -> 2 accts, 2 custs (ACC-02/CUST-02 overlaps)
+    # Day 3 (2026-03-12): ACC-01 (CUST-01)                    -> 1 acct,  1 cust  (ACC-01/CUST-01 overlaps)
+    (dataset_dir / "transactions.csv").write_text(
+        "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+        "TXN-MD-01,ACC-01,DEPOSIT,100.00,USD,2026-03-10T10:00:00+00:00,COMPLETED,ONLINE,,CORE\n"
+        "TXN-MD-02,ACC-02,DEPOSIT,200.00,USD,2026-03-10T11:00:00+00:00,COMPLETED,BRANCH,,CORE\n"
+        "TXN-MD-03,ACC-02,WITHDRAWAL,50.00,USD,2026-03-11T09:00:00+00:00,COMPLETED,ATM,,CORE\n"
+        "TXN-MD-04,ACC-03,PAYMENT,75.00,USD,2026-03-11T14:00:00+00:00,COMPLETED,MOBILE,,CORE\n"
+        "TXN-MD-05,ACC-01,DEPOSIT,120.00,USD,2026-03-12T16:00:00+00:00,COMPLETED,ONLINE,,CORE\n",
+        encoding="utf-8",
+    )
+
+    batch_id = f"batch-multiday-{uuid.uuid4().hex[:8]}"
+    with get_connection(postgres_test_db) as conn:
+        loader = StagingLoader(conn)
+        loader.ingest_dataset_directory(dataset_dir, batch_id=batch_id)
+        val = ValidationEngine(conn)
+        val.validate_batch(batch_id)
+        wh = WarehouseLoader(conn)
+        wh.load_batch(batch_id)
+
+    # 1. Verify period-wide overview without filter
+    resp = api_client.get("/api/v1/overview")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["metrics_by_currency"]) == 1
+    usd_metric = data["metrics_by_currency"][0]
+    assert usd_metric["currency"] == "USD"
+    assert usd_metric["total_transactions"] == 5
+    assert usd_metric["completed_transactions"] == 5
+    assert usd_metric["gross_transaction_amount"] == "545.00"
+    # CRITICAL: Max single-day is 2, Sum of daily is 5. Period-wide distinct count must be 3!
+    assert usd_metric["active_accounts"] == 3
+    assert usd_metric["active_customers"] == 3
+
+    # 2. Verify period-wide overview with currency filter
+    resp_usd = api_client.get("/api/v1/overview?currency=USD")
+    assert resp_usd.status_code == 200
+    data_usd = resp_usd.json()
+    assert len(data_usd["metrics_by_currency"]) == 1
+    assert data_usd["metrics_by_currency"][0]["active_accounts"] == 3
+    assert data_usd["metrics_by_currency"][0]["active_customers"] == 3
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "invalid_date",
+    [
+        "20260315",       # Compact date
+        "2026-W11-7",     # ISO week date
+        "2026-02-29",     # Invalid calendar date (not a leap year)
+        "2026-04-31",     # Invalid calendar date (April has 30 days)
+        "2026-13-01",     # Invalid month
+        "malformed",      # Non-date string
+        "2026/03/15",     # Slash delimiter
+        " 2026-03-15 ",   # Trailing/leading whitespace
+        "",               # Empty string
+    ],
+)
+def test_api_strict_date_validation_rejected(api_client, invalid_date):
+    """Verify exact YYYY-MM-DD parsing rejects compact, week, malformed, and invalid calendar dates."""
+    resp_start = api_client.get(f"/api/v1/daily?start_date={invalid_date}")
+    assert resp_start.status_code == 400
+    assert "Invalid start_date" in resp_start.json()["detail"]
+
+    resp_end = api_client.get(f"/api/v1/daily?end_date={invalid_date}")
+    assert resp_end.status_code == 400
+    assert "Invalid end_date" in resp_end.json()["detail"]
+
+
+@pytest.mark.integration
+def test_api_currency_validation(api_client):
+    """Verify supported currencies (USD, EUR, GBP) are accepted and others rejected with 400."""
+    for curr in ["USD", "EUR", "GBP", "usd", "eur", "gbp"]:
+        resp = api_client.get(f"/api/v1/overview?currency={curr}")
+        assert resp.status_code == 200, f"Supported currency '{curr}' failed"
+
+    for bad_curr in ["CAD", "JPY", "XYZ", "INVALID", "123"]:
+        resp = api_client.get(f"/api/v1/overview?currency={bad_curr}")
+        assert resp.status_code == 400, f"Unsupported currency '{bad_curr}' did not return 400"
+        assert "Supported currencies" in resp.json()["detail"]
+
+
+@pytest.mark.integration
+def test_api_quality_disposition_validation(api_client):
+    """Verify canonical dispositions (ACCEPTED, REJECTED, WARNED, SKIPPED) pass and others return 400."""
+    for disp in ["ACCEPTED", "REJECTED", "WARNED", "SKIPPED", "accepted", "rejected", "warned", "skipped"]:
+        resp = api_client.get(f"/api/v1/quality?disposition={disp}")
+        assert resp.status_code == 200, f"Canonical disposition '{disp}' failed"
+
+    for bad_disp in ["LOGGED", "QUARANTINED", "UNKNOWN", "DROP", "123"]:
+        resp = api_client.get(f"/api/v1/quality?disposition={bad_disp}")
+        assert resp.status_code == 400, f"Invalid disposition '{bad_disp}' did not return 400"
+        assert "Permitted values" in resp.json()["detail"]

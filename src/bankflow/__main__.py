@@ -436,16 +436,16 @@ def report_cmd(name: str, currency: Optional[str], limit: int, test_db: bool):
 
 
 @cli.command("serve")
-@click.option("--host", default="127.0.0.1", show_default=True, help="Host network interface to bind the API server.")
-@click.option("--port", default=8000, show_default=True, type=int, help="Port to bind the API server.")
+@click.option("--host", default=None, help="Host network interface to bind the API server. Defaults to BANKFLOW_API_HOST or 127.0.0.1.")
+@click.option("--port", default=None, type=int, help="Port to bind the API server. Defaults to BANKFLOW_API_PORT or 8000.")
 @click.option("--reload", is_flag=True, help="Enable auto-reload on code change.")
 @click.option("--test-db", is_flag=True, help="Serve API against dedicated test database instead of primary.")
-def serve_cmd(host: str, port: int, reload: bool, test_db: bool):
+def serve_cmd(host: Optional[str], port: Optional[int], reload: bool, test_db: bool):
     """Start the read-only reporting API server for BankFlow Dashboard."""
     try:
         import uvicorn
         from bankflow.api.app import create_app
-        from bankflow.config import get_settings
+        from bankflow.api.config import ApiConfig
     except ImportError:
         click.secho(
             "[ERROR] FastAPI and Uvicorn are required to run the reporting API.\n"
@@ -455,15 +455,15 @@ def serve_cmd(host: str, port: int, reload: bool, test_db: bool):
         )
         sys.exit(1)
 
-    settings = get_settings()
-    db_config = settings.test_db if test_db else settings.db
+    api_config = ApiConfig.from_env(use_test_db=test_db, host=host, port=port)
+    db_config = api_config.db_config
 
-    click.secho(f"Starting BankFlow Read-Only Reporting API on http://{host}:{port}...", fg="cyan", bold=True)
-    click.echo(f"Connected to database '{db_config.name}' on {db_config.host}:{db_config.port} (Read-Only mode)")
+    click.secho(f"Starting BankFlow Read-Only Reporting API on http://{api_config.host}:{api_config.port}...", fg="cyan", bold=True)
+    click.echo(f"Connected to database '{db_config.name}' as user '{db_config.user}' on {db_config.host}:{db_config.port} (Read-Only mode)")
     click.echo("Interactive API documentation available at: /docs")
 
-    app = create_app(db_config=db_config, use_test_db=test_db)
-    uvicorn.run(app, host=host, port=port, reload=reload)
+    app = create_app(api_config=api_config, use_test_db=test_db)
+    uvicorn.run(app, host=api_config.host, port=api_config.port, reload=reload)
 
 
 if __name__ == "__main__":

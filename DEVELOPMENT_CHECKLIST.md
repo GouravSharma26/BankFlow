@@ -106,6 +106,18 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Exit criteria:** Dashboard reporting API data matches authoritative PostgreSQL reporting views for all test cases, enforces read-only access and strict input validation without leaking credentials, and frontend integration contract is fully documented. (Verified: 12/12 API integration tests pass, full suite 90/90 tests pass with zero failures and zero skips).
 
+## Phase 5.1 — Hotfix: API Review Findings & Hardening
+
+**Goal:** Address five verified code-review findings from the Phase 5 merge before proceeding to Phase 6.
+
+- [x] **Finding 1 (CLI Configuration Precedence):** Updated `bankflow serve` to resolve `ApiConfig` via `ApiConfig.from_env()`, honouring `BANKFLOW_REPORTING_DB_USER` and `BANKFLOW_REPORTING_DB_PASSWORD` alongside CLI host/port overrides. Added 6 regression tests in `tests/test_api_config.py`.
+- [x] **Finding 2 (Hardcoded Credential Removal):** Removed static password `'reporting_password_placeholder'` from `sql/06_reporting_role.sql`. Documented secure, out-of-band password setup via interactive `\password` and psql `-v REPORTING_PW=...` in `.env.example`, `HUMAN_SETUP.md`, and `docs/dashboard_api_contract.md`.
+- [x] **Finding 3 (Canonical Quality Dispositions):** Aligned API quality disposition validation with canonical constants `ACCEPTED`, `REJECTED`, `WARNED`, and `SKIPPED` across `validators.py`, `schemas.py`, `routes/quality.py`, and documentation.
+- [x] **Finding 4 (Overview Entity Distinct Totals):** Corrected `active_accounts` and `active_customers` in `GET /api/v1/overview` so they represent true period-wide distinct entities from `reporting.v_transaction_details`, rather than single-day `MAX()`. Added multi-day, same-currency regression fixture verifying distinct union count.
+- [x] **Finding 5 (Strict Date & Currency Validation):** Replaced permissive date parsing with strict `parse_strict_date` requiring exact `YYYY-MM-DD` syntax and calendar bounds, rejecting compact dates, ISO week dates, whitespace padding, and invalid calendar days. Enforced supported currencies (`USD`, `EUR`, `GBP`). Added 38 regression tests in `tests/test_api_validators.py` and `tests/test_api_integration.py`.
+
+**Exit criteria:** Zero failures and zero skips across full test suite with mandatory PostgreSQL integration tests; clean `git diff --check`; no credentials or secrets committed; PR opened for review without auto-merging.
+
 ## Phase 6 — Hardening, CI, Documentation, and Portfolio Release
 
 **Goal:** Make the project easy to test, review, reproduce, and explain.
