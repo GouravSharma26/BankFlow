@@ -250,7 +250,7 @@ class WarehouseLoader:
                     )
                     ORDER BY d
                     ON CONFLICT (date_key) DO NOTHING;
-                """, (min_date, max_date, min_date, max_date))
+                """, (min_date, max_date))
 
     def _load_branches(self, cur: psycopg2.extensions.cursor, batch_id: str) -> int:
         cur.execute("""

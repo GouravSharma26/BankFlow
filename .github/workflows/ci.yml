@@ -2,7 +2,7 @@ name: BankFlow CI
 
 on:
   push:
-    branches: [main, phase/3-warehouse-loading]
+    branches: [main, phase/3-warehouse-loading, "hotfix/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -65,19 +65,18 @@ jobs:
           conn = psycopg2.connect(os.environ["DATABASE_URL"])
           conn.autocommit = True
           try:
-              with conn.cursor() as cur:
-                  cur.execute("SELECT 1 FROM pg_database WHERE datname = 'bankflow_test'")
-                  if not cur.fetchone():
-                      cur.execute("CREATE DATABASE bankflow_test")
+            with conn.cursor() as cur:
+              cur.execute("SELECT 1 FROM pg_database WHERE datname = 'bankflow_test'")
+              if not cur.fetchone():
+                cur.execute("CREATE DATABASE bankflow_test")
           finally:
-              conn.close()
+            conn.close()
           PY
 
       - name: Run complete test suite (integration tests required)
-        id: run_tests
         run: |
+          set -euo pipefail
           python -m pytest tests -v --tb=short --junitxml=pytest-junit.xml 2>&1 | tee pytest.log
-        continue-on-error: true
 
       - name: Upload test artifacts
         if: always()
@@ -87,20 +86,3 @@ jobs:
           path: |
             pytest.log
             pytest-junit.xml
-
-      - name: Evaluate test result
-        run: |
-          echo "=== PYTEST LOG START ==="
-          cat pytest.log
-          echo "=== PYTEST LOG END ==="
-          python -c '
-          import xml.etree.ElementTree as ET
-          tree = ET.parse("pytest-junit.xml")
-          root = tree.getroot()
-          failures = int(root.attrib.get("failures", 0))
-          errors = int(root.attrib.get("errors", 0))
-          tests = int(root.attrib.get("tests", 0))
-          print(f"Junit summary: {tests} tests, {failures} failures, {errors} errors")
-          if failures > 0 or errors > 0:
-              exit(1)
-          '

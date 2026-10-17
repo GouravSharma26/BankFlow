@@ -21,6 +21,8 @@ ENV/
 .pytest_cache/
 .coverage
 htmlcov/
+pytest.log
+pytest-junit.xml
 
 # Environment and secrets
 .env
@@ -54,3 +56,6 @@ Desktop.ini
 
 # Release patch source folder
 BankFlow_Resume_Release_Patch/
+
+# Playwright MCP artifacts
+.playwright-mcp/
