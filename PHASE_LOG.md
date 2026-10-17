@@ -579,8 +579,10 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-17
 - Branch: `hotfix/phase-5-api-review-findings`
-- Commit SHA: `83424b7`
-- Pull Request: Pending PR
+- Commit SHA: `75b9a34`
+- Pull Request: PR #7 (<https://github.com/GouravSharma26/BankFlow/pull/7>)
+- GitHub CI Run (PR #7): <https://github.com/GouravSharma26/BankFlow/actions/runs/39028636746> (SUCCESS, 155 passed, 0 skipped, 0 failed in 9.46s)
+- Push status: Pushed to `origin/hotfix/phase-5-api-review-findings`, PR #7 opened into `main` (auto-merge deferred)
 - Objective: Address five verified code-review findings from the merged Phase 5 baseline before proceeding to Phase 6.
 - Scope delivered:
   1. **Finding 1 — CLI Configuration Precedence (`bankflow serve`):**
