@@ -4,16 +4,15 @@
 
 ## Current Status
 
-- Overall status: `REVIEW PENDING — Phase 3 Final Replay & Concurrency Corrections Complete`
-- Current phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation`
+- Overall status: `RELEASE READY — BankFlow CLI & Dimensional Warehouse Release Candidate`
+- Current phase: `Phase 3 — Warehouse Model, Loading, Idempotency, and Reconciliation (Completed & Release-Packaged)`
 - Last approved implementation phase: `Phase 2 — Validation, Quarantine, and Data Contracts (Approved at commit d4e3c02)`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 - Baseline commit: `cc2b371`
 - Latest reviewed head: `b92c3cc`
-- Previous review correction commit: `40ed5ff`
-- Implementation correction commit: `558b002`
+- Corrective replay/concurrency commits: `558b002`, `cdb4ea8`
 - Branch: `phase/3-warehouse-loading`
-- Phase status: `REVIEW PENDING`
+- Release target: `main`
 
 ## How to Maintain This File
 
@@ -394,7 +393,49 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - Reconciliation fails with discrepancy when conflicting payloads are detected.
 - Review findings: Finding 1 and Finding 2 resolved.
 - Known limitations: Phase 3 review remains pending external review; Phase 4 not started.
-- Next action: Push commit to `phase/3-warehouse-loading` and await external review.
+- Next action: Package CLI release, update documentation, and prepare PR for main.
+
+### BankFlow CLI Release — Fast Resume Release Package
+
+- Status: VERIFIED LOCALLY — READY FOR PR MERGE
+- Date: 2026-10-17
+- Branch: phase/3-warehouse-loading
+- Scope: Applied release patch for a truthful, reproducible, resume-ready Python/PostgreSQL CLI ETL and warehouse release.
+- Changes delivered:
+  1. Updated `README.md` to accurately describe the delivered Python/PostgreSQL CLI ETL pipeline, validation/quarantine engine, dimensional star schema, replay safety, reconciliation, and analytics queries. Explicitly scoped project as a CLI-based warehouse; marked BI dashboards and cloud scheduling as deferred.
+  2. Added `sql/04_analytics_queries.sql` containing 6 repeatable reporting queries:
+     - Monthly transaction volume and gross amount by currency (grouping by currency).
+     - Transaction mix by type, family, channel, and currency.
+     - Branch and regional activity.
+     - Data-quality issue summary by rule, severity, and disposition.
+     - Recent batch health and source-to-warehouse reconciliation status.
+     - Quarantine volume by entity and primary rule code.
+     Verified execution on PostgreSQL container.
+  3. Added `.github/workflows/ci.yml` providing GitHub Actions CI workflow running on push to `main` and `phase/3-warehouse-loading`, and PRs targeting `main`. Provisions PostgreSQL 17, initializes `bankflow_test`, installs `.[dev]`, enforces `BANKFLOW_REQUIRE_INTEGRATION_TESTS="1"`, and runs the full test suite.
+  4. Added `RELEASE_CHECKLIST.md` tracking verified release criteria and deferred features.
+  5. Updated `HUMAN_SETUP.md` with complete CLI reference commands and deferred scope.
+  6. Verified end-to-end execution of clean synthetic dataset (`release-clean-001`: 170 staged, 170 valid, 0 rejected, 100 facts inserted, 0 replays, RECONCILED).
+  7. Verified defect-injected dataset (`release-defects-001`: 170 staged, 156 valid, 14 rejected, 86 replays skipped, 1 conflicting replay quarantined, UNRECONCILED with non-zero exit code).
+  8. Full test suite: 67 passed, 0 skipped, 0 failed in 267s against PostgreSQL test database with `BANKFLOW_REQUIRE_INTEGRATION_TESTS="1"`.
+- Tests/commands executed:
+  - `python -m pip install -e ".[dev]"`
+  - `python -m pytest tests -v` with `BANKFLOW_REQUIRE_INTEGRATION_TESTS="1"` (67 passed, 0 skipped, 0 failed)
+  - `python -m bankflow generate --output-dir data/samples --seed 42 --branches 5 --customers 25 --accounts 40 --transactions 100`
+  - `python -m bankflow run --input-dir data/samples --batch-id release-clean-001`
+  - `python -m bankflow batch-status release-clean-001`
+  - `python -m bankflow generate --output-dir data/defective-sample --seed 42 --transactions 100 --with-defects`
+  - `python -m bankflow run --input-dir data/defective-sample --batch-id release-defects-001`
+  - `python -m bankflow batch-status release-defects-001`
+  - Executed `sql/04_analytics_queries.sql` on live database
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes: 67 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - End-to-end clean run succeeded and verified.
+  - Defect-injected run quarantined records, reported discrepancies, and failed reconciliation.
+  - All 6 SQL analytics queries executed and returned valid results.
+  - Full automated suite passes with mandatory integration tests.
+- Known limitations: BI dashboard (Power BI/Metabase) and cloud scheduling/managed deployment are deferred for future roadmap phases.
+- Next action: Commit release changes, push to `phase/3-warehouse-loading`, open PR into `main`, and merge after CI verification.
 
 ## Phase Entry Template
 
