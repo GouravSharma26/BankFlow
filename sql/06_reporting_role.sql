@@ -1,11 +1,19 @@
--- BankFlow Phase 5: Dedicated Read-Only Reporting Role Setup
--- Grants least-privilege read-only access strictly to the `reporting` schema.
--- Prevents access to raw staging payloads, monitoring mutations, or warehouse base tables.
+-- SECURE PASSWORD PROVISIONING:
+-- Passwords must never be hardcoded or checked into version control.
+-- After running this script, set or rotate the reporting user password securely out-of-band:
+--   Option A (Interactive psql):
+--     \password bankflow_reporting_user
+--   Option B (Environment-driven via psql variable):
+--     psql -v REPORTING_PW="$BANKFLOW_REPORTING_DB_PASSWORD" -c "ALTER ROLE bankflow_reporting_user WITH PASSWORD :'REPORTING_PW';"
+--
+-- Then configure your application runtime (.env):
+--   BANKFLOW_REPORTING_DB_USER=bankflow_reporting_user
+--   BANKFLOW_REPORTING_DB_PASSWORD=<secure_password>
 
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bankflow_reporting_user') THEN
-        CREATE ROLE bankflow_reporting_user WITH LOGIN PASSWORD 'reporting_password_placeholder';
+        CREATE ROLE bankflow_reporting_user WITH LOGIN;
     END IF;
 END $$;
 

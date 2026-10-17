@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Optional
 from bankflow.config import DatabaseConfig, get_settings
 
 
@@ -24,9 +25,21 @@ class ApiConfig:
     db_config: DatabaseConfig = None
 
     @classmethod
-    def from_env(cls, use_test_db: bool = False) -> ApiConfig:
-        host = os.environ.get("BANKFLOW_API_HOST", "127.0.0.1")
-        port = int(os.environ.get("BANKFLOW_API_PORT", "8000"))
+    def from_env(
+        cls,
+        use_test_db: bool = False,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+    ) -> ApiConfig:
+        env_host = os.environ.get("BANKFLOW_API_HOST", "127.0.0.1")
+        env_port_raw = os.environ.get("BANKFLOW_API_PORT", "8000")
+        try:
+            env_port = int(env_port_raw)
+        except ValueError:
+            env_port = 8000
+
+        resolved_host = host if host is not None else env_host
+        resolved_port = port if port is not None else env_port
 
         raw_origins = os.environ.get("BANKFLOW_CORS_ORIGINS", "")
         if raw_origins.strip():
@@ -46,19 +59,22 @@ class ApiConfig:
 
         settings = get_settings()
         db_conf = settings.test_db if use_test_db else settings.db
-        if reporting_user and reporting_password:
+
+        user = reporting_user.strip() if reporting_user and reporting_user.strip() else db_conf.user
+        password = reporting_password if reporting_password is not None else db_conf.password
+
+        if (reporting_user and reporting_user.strip()) or (reporting_password is not None):
             db_conf = DatabaseConfig(
                 host=db_conf.host,
                 port=db_conf.port,
                 name=db_conf.name,
-                user=reporting_user,
-                password=reporting_password,
+                user=user,
+                password=password,
             )
 
-
         return cls(
-            host=host,
-            port=port,
+            host=resolved_host,
+            port=resolved_port,
             cors_origins=cors_origins,
             db_config=db_conf,
         )

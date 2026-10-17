@@ -251,7 +251,7 @@ Data quality defect inventory distinguishing issue records from affected source 
 
 - **Query Parameters:**
   - `severity` *(optional, string)*: `ERROR`, `WARNING`, `INFO`.
-  - `disposition` *(optional, string)*: `REJECTED`, `QUARANTINED`, `SKIPPED`, `LOGGED`.
+  - `disposition` *(optional, string)*: `ACCEPTED`, `REJECTED`, `WARNED`, `SKIPPED`.
   - `limit` *(optional, int, default: 50, min: 1, max: 200)*.
 - **Response (200 OK):**
   ```json
@@ -402,7 +402,25 @@ python -m bankflow generate --output-dir data/samples --seed 42 --transactions 1
 python -m bankflow run --input-dir data/samples --batch-id demo-batch-001
 ```
 
-### 5.4 Launch the Reporting API Server
+### 5.4 Provision Least-Privilege Reporting Role (Optional but Recommended)
+Provision the dedicated read-only role and set its password securely out-of-band:
+
+```powershell
+psql "postgresql://postgres:postgres@localhost:5432/bankflow" -f sql/06_reporting_role.sql
+psql "postgresql://postgres:postgres@localhost:5432/bankflow" -c "\password bankflow_reporting_user"
+```
+Or set via environment variable in automated deployments:
+```powershell
+psql -v REPORTING_PW="$BANKFLOW_REPORTING_DB_PASSWORD" -c "ALTER ROLE bankflow_reporting_user WITH PASSWORD :'REPORTING_PW';"
+```
+
+Configure your local `.env`:
+```bash
+BANKFLOW_REPORTING_DB_USER=bankflow_reporting_user
+BANKFLOW_REPORTING_DB_PASSWORD=your_secure_password
+```
+
+### 5.5 Launch the Reporting API Server
 Start the read-only FastAPI server:
 
 ```powershell
@@ -413,7 +431,7 @@ Interactive OpenAPI documentation is immediately accessible at:
 - **Swagger UI:** `http://127.0.0.1:8000/docs`
 - **ReDoc:** `http://127.0.0.1:8000/redoc`
 
-### 5.5 Connecting the Frontend Locally
+### 5.6 Connecting the Frontend Locally
 In your local clone of the Lovable frontend console:
 1. Create or edit `.env.local`:
    ```bash

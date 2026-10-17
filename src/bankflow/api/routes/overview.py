@@ -31,22 +31,48 @@ def get_overview(
         # 1. Currency summaries
         sql = """
             SELECT
-                currency,
-                SUM(total_transaction_count) AS total_transactions,
-                SUM(completed_transaction_count) AS completed_transactions,
-                SUM(gross_transaction_amount)::NUMERIC(18, 2) AS gross_transaction_amount,
-                SUM(completed_gross_amount)::NUMERIC(18, 2) AS completed_gross_amount,
-                MAX(active_accounts) AS active_accounts,
-                MAX(active_customers) AS active_customers,
-                MIN(reporting_date)::TEXT AS min_date,
-                MAX(reporting_date)::TEXT AS max_date
-            FROM reporting.v_daily_transaction_summary
+                v.currency,
+                v.total_transactions,
+                v.completed_transactions,
+                v.gross_transaction_amount,
+                v.completed_gross_amount,
+                COALESCE(e.distinct_accounts, 0) AS active_accounts,
+                COALESCE(e.distinct_customers, 0) AS active_customers,
+                v.min_date,
+                v.max_date
+            FROM (
+                SELECT
+                    currency,
+                    SUM(total_transaction_count) AS total_transactions,
+                    SUM(completed_transaction_count) AS completed_transactions,
+                    SUM(gross_transaction_amount)::NUMERIC(18, 2) AS gross_transaction_amount,
+                    SUM(completed_gross_amount)::NUMERIC(18, 2) AS completed_gross_amount,
+                    MIN(reporting_date)::TEXT AS min_date,
+                    MAX(reporting_date)::TEXT AS max_date
+                FROM reporting.v_daily_transaction_summary
         """
         params = []
         if valid_curr:
             sql += " WHERE currency = %s"
             params.append(valid_curr)
-        sql += " GROUP BY currency ORDER BY currency;"
+        sql += """
+                GROUP BY currency
+            ) v
+            LEFT JOIN (
+                SELECT
+                    currency,
+                    COUNT(DISTINCT account_id) AS distinct_accounts,
+                    COUNT(DISTINCT customer_id) AS distinct_customers
+                FROM reporting.v_transaction_details
+        """
+        if valid_curr:
+            sql += " WHERE currency = %s"
+            params.append(valid_curr)
+        sql += """
+                GROUP BY currency
+            ) e ON e.currency = v.currency
+            ORDER BY v.currency;
+        """
 
         cur.execute(sql, tuple(params))
         curr_rows = cur.fetchall()

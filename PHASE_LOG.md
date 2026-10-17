@@ -4,12 +4,12 @@
 
 ## Current Status
 
-- Overall status: `PHASE 5 VERIFIED — Read-Only Dashboard API Integration Implemented`
-- Current phase: `Phase 5 — Dashboard Integration (Lovable Analytics Console)`
-- Last approved implementation phase: `Phase 4 — SQL Analytics and Metric Definitions (Merged into main at 805b03e)`
+- Overall status: `PHASE 5.1 HOTFIX VERIFIED — API Review Findings & Hardening Implemented`
+- Current phase: `Phase 5.1 Hotfix — API Review Findings & Hardening`
+- Last approved implementation phase: `Phase 5 — Dashboard Integration (Merged into main at 9b91a0a)`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
-- Baseline commit: `805b03e` (Phase 4 main)
-- Branch: `phase/5-dashboard-api`
+- Baseline commit: `9b91a0a` (PR #6 merge commit)
+- Branch: `hotfix/phase-5-api-review-findings`
 
 ## How to Maintain This File
 
@@ -573,6 +573,50 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Known limitations:
   - The public hosted Lovable console (`https://bankflow-analytics-console.lovable.app/`) currently operates in synthetic Demo Mode. To connect live, the BankFlow API and PostgreSQL database must be deployed and `VITE_BANKFLOW_API_BASE_URL` configured on the frontend.
 - Next action: Submit Phase 5 PR for user review; do not merge automatically.
+
+### Phase 5.1 Hotfix — API Review Findings & Hardening
+
+- Status: VERIFIED
+- Date: 2026-10-17
+- Branch: `hotfix/phase-5-api-review-findings`
+- Commit SHA: `75b9a34`
+- Pull Request: PR #7 (<https://github.com/GouravSharma26/BankFlow/pull/7>)
+- GitHub CI Run (PR #7): <https://github.com/GouravSharma26/BankFlow/actions/runs/39028636746> (SUCCESS, 155 passed, 0 skipped, 0 failed in 9.46s)
+- Push status: Pushed to `origin/hotfix/phase-5-api-review-findings`, PR #7 opened into `main` (auto-merge deferred)
+- Objective: Address five verified code-review findings from the merged Phase 5 baseline before proceeding to Phase 6.
+- Scope delivered:
+  1. **Finding 1 — CLI Configuration Precedence (`bankflow serve`):**
+     - Updated `ApiConfig.from_env` to support explicit host/port overrides and resolve dedicated reporting credentials (`BANKFLOW_REPORTING_DB_USER`, `BANKFLOW_REPORTING_DB_PASSWORD`).
+     - Refactored `bankflow serve` to construct and pass resolved `ApiConfig` directly into `create_app(api_config=...)`.
+     - Added 6 regression tests in `tests/test_api_config.py`.
+  2. **Finding 2 — Hardcoded Reporting Password Removal (`sql/06_reporting_role.sql`):**
+     - Removed hardcoded `'reporting_password_placeholder'` string from `CREATE ROLE bankflow_reporting_user WITH LOGIN;`.
+     - Documented secure, out-of-band password setup via interactive `\password bankflow_reporting_user` and non-interactive `psql -v REPORTING_PW=...` in `.env.example`, `HUMAN_SETUP.md`, and `docs/dashboard_api_contract.md`.
+  3. **Finding 3 — Canonical Quality Dispositions:**
+     - Aligned API quality disposition validation and schema documentation with canonical constants `ACCEPTED`, `REJECTED`, `WARNED`, and `SKIPPED` from `bankflow.constants`.
+     - Updated `src/bankflow/api/validators.py`, `src/bankflow/api/schemas.py`, `src/bankflow/api/routes/quality.py`, and `docs/dashboard_api_contract.md`.
+  4. **Finding 4 — Period-Wide Distinct Entity Totals in Overview (`GET /api/v1/overview`):**
+     - Corrected `active_accounts` and `active_customers` calculation in `get_overview`. Joined `reporting.v_transaction_details` grouped by currency with `COUNT(DISTINCT account_id)` and `COUNT(DISTINCT customer_id)` to reflect the true period-wide union instead of single-day `MAX()`.
+     - Added a multi-day, same-currency regression fixture in `tests/test_api_integration.py` (`test_api_overview_multiday_overlapping_entities`) demonstrating single-day MAX (2) and daily SUM (5) are rejected in favor of the true period-wide distinct count (3).
+  5. **Finding 5 — Strict ISO Calendar Date & Supported Currency Validation:**
+     - Replaced permissive `date.fromisoformat` parsing with `parse_strict_date` from `bankflow.validation.dates`.
+     - Enforces exact `YYYY-MM-DD` syntax and calendar bounds check via `strptime`. Rejects compact dates (`20260315`), ISO week dates (`2026-W11-7`), whitespace padding, non-leap year Feb 29 (`2026-02-29`), and April 31 (`2026-04-31`).
+     - Enforced supported currencies strictly against `SUPPORTED_CURRENCIES` (`USD`, `EUR`, `GBP`).
+     - Added 38 regression tests across `tests/test_api_validators.py` and `tests/test_api_integration.py`.
+- Tests/commands executed:
+  - `python -m pytest tests/test_api_config.py tests/test_api_validators.py tests/test_api_integration.py -v` (77 passed in 323.85s)
+  - Full suite: `powershell -Command "$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS='1'; python -m pytest tests -v"` (155 passed, 0 skipped, 0 failed in 713.49s)
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes: 155 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - 6 new config precedence regression tests pass.
+  - 38 new date, currency, and disposition validator tests pass.
+  - Multi-day overlapping accounts/customers regression fixture passes and asserts accurate distinct entity counts.
+  - Full suite passes with zero failures and zero skips under mandatory PostgreSQL integration testing.
+  - Clean diff with zero leaked credentials or unreferenced files.
+- Known limitations:
+  - Phase 6 (Hardening, CI, Documentation, and Portfolio Release) remains to be performed.
+- Next action: Submit Phase 5.1 Hotfix PR for review; do not merge automatically.
 
 
 ## Phase Entry Template

@@ -137,6 +137,12 @@ If PowerShell blocks virtual-environment activation, use an allowed terminal con
 10. **Provision least-privilege reporting role:**
     ```powershell
     psql "postgresql://postgres:postgres@localhost:5432/bankflow" -f sql/06_reporting_role.sql
+    psql "postgresql://postgres:postgres@localhost:5432/bankflow" -c "\password bankflow_reporting_user"
+    ```
+    Set credentials in `.env`:
+    ```bash
+    BANKFLOW_REPORTING_DB_USER=bankflow_reporting_user
+    BANKFLOW_REPORTING_DB_PASSWORD=your_secure_password
     ```
 
 11. **Start read-only Reporting API:**
