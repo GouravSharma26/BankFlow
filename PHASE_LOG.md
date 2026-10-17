@@ -703,7 +703,7 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-17
 - Branch: `phase/6-hardening-portfolio-release`
-- Commit SHA: pending commit
+- Commit SHA: `6697c20`
 - Push status: In progress (pushing to `origin/phase/6-hardening-portfolio-release`)
 - Objective: Complete Phase 6 hardening, CI strengthening, repository documentation synchronization, clean-clone verification, and portfolio presentation.
 - Scope delivered:
