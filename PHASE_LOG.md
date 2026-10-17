@@ -625,9 +625,10 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Date: 2026-10-17
 - Branch: `hotfix/reporting-credential-config`
 - Commit SHA: `e05ac36`
-- Pull Request: PR #8 (<https://github.com/GouravSharma26/BankFlow/pull/8>)
-- GitHub CI Run (PR #8): <https://github.com/GouravSharma26/BankFlow/actions/runs/39030830268> (SUCCESS, 167 passed, 0 skipped, 0 failed in 9.49s)
-- Push status: Pushed to `origin/hotfix/reporting-credential-config`, PR #8 opened into `main` (auto-merge deferred)
+- Pull Request: PR #8 (<https://github.com/GouravSharma26/BankFlow/pull/8>) — Merged into `main` at commit `d2705b2c9902cfc22adf60e6917bbc653b31cddb`
+- GitHub CI Run (PR #8): <https://github.com/GouravSharma26/BankFlow/actions/runs/39030932234> (SUCCESS, 167 passed, 0 skipped, 0 failed in 9.38s)
+- Post-Merge GitHub CI Run (`main`): <https://github.com/GouravSharma26/BankFlow/actions/runs/39031088813> (SUCCESS, 167 passed, 0 skipped, 0 failed in 9.61s)
+- Push status: Pushed to `origin/hotfix/reporting-credential-config`; PR #8 merged into `main` at commit `d2705b2c9902cfc22adf60e6917bbc653b31cddb`
 - Objective: Enforce paired reporting credentials, eliminate command-line password arguments in documentation, add isolated regression tests, and verify complete test suite before Phase 6.
 - Scope delivered:
   1. **Enforce Paired Reporting Credentials (`src/bankflow/api/config.py`):**
@@ -648,16 +649,54 @@ For every phase, add a new entry below the template. Keep earlier entries as his
      - Corrected PowerShell `$env:VARIABLE = "value"` syntax in setup examples.
 - Tests/commands executed:
   - `python -m pytest tests/test_api_config.py -v` (18 passed in 0.68s)
-  - Full suite: `powershell -Command "$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS='1'; python -m pytest tests -v"` (155 passed, 0 skipped, 0 failed)
+  - Full suite: `powershell -Command "$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS='1'; python -m pytest tests -v"` (167 passed, 0 skipped, 0 failed in 712.73s)
   - `git diff --check` (clean, 0 warnings/errors)
-- Test outcomes: 155 passed, 0 skipped, 0 failed.
+- Test outcomes: 167 passed, 0 skipped, 0 failed.
 - Acceptance evidence:
   - Paired credentials enforced; unpaired or mixed credentials rejected with explicit `ApiConfigurationError`.
   - Zero password exposure in CLI examples across all documentation and SQL scripts.
-  - 18 isolated API config unit tests pass. Full test suite passes with zero failures and zero skips under mandatory PostgreSQL integration testing.
+  - 18 isolated API config unit tests pass. Full test suite passes (167 passed, 0 failed, 0 skipped) with zero failures and zero skips under mandatory PostgreSQL integration testing.
+  - GitHub Actions CI verified clean on branch and on `main` post-merge.
 - Known limitations:
+  - Valid reporting passwords were trimmed alongside usernames in config instantiation; followed up immediately to preserve exact configured password strings.
   - Phase 6 (Hardening, CI, Documentation, and Portfolio Release) remains to be performed.
-- Next action: Submit Phase 5.2 Hotfix PR for review; do not merge automatically.
+- Next action: PR #8 merged into `main` at `d2705b2c9902cfc22adf60e6917bbc653b31cddb`; proceed with password preservation follow-up hotfix before Phase 6.
+
+### Phase 5.2 Follow-up — Reporting Password Exact Preservation Hotfix
+
+- Status: VERIFIED
+- Date: 2026-10-17
+- Branch: `hotfix/password-exact-preservation`
+- Code Commit SHA: `2a95088c5608144a5fdfee5fcf06614b3240e749`
+- Documentation / Head Commit SHA: `ad630a6af19ff3535dbd51cc279d41237cdb62fc`
+- Pull Request: PR #9 (<https://github.com/GouravSharma26/BankFlow/pull/9>)
+- GitHub CI Run (PR #9): <https://github.com/GouravSharma26/BankFlow/actions/runs/39032723924> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.42s)
+- Push status: Pushed to `origin/hotfix/password-exact-preservation`; PR #9 open into `main` (auto-merge deferred)
+- Objective: Preserve configured reporting database passwords exactly without stripping leading/trailing whitespace, while retaining empty/whitespace-only password validation and username trimming.
+- Scope delivered:
+  1. **Password Exact Preservation (`src/bankflow/api/config.py`):**
+     - Updated `ApiConfig.from_env` when instantiating `DatabaseConfig` to pass `raw_password` without calling `.strip()`.
+     - Preserved whitespace checks in `password_non_empty = bool(raw_password and raw_password.strip())` to reject empty or whitespace-only passwords with `ApiConfigurationError`.
+     - Preserved username trimming (`user=raw_user.strip()`).
+     - Preserved all paired credential rules, local fallbacks, host/port precedence, and `--test-db` resolution.
+  2. **Regression Test Coverage (`tests/test_api_config.py`):**
+     - Added `test_reporting_credentials_password_exact_preservation` verifying that a password containing leading and trailing spaces is preserved byte-for-byte and not stripped, while the username is properly trimmed.
+  3. **Documentation Reconciliation (`PHASE_LOG.md` & `DEVELOPMENT_CHECKLIST.md`):**
+     - Reconciled Phase 5.2 log entry with verified test count of 167 passed, PR #8 merge commit `d2705b2c9902cfc22adf60e6917bbc653b31cddb`, and verified post-merge CI run link (`39031088813`).
+     - Added password exact-preservation sub-item to Phase 5.2 checklist.
+- Tests/commands executed:
+  - `.venv\Scripts\python -m pytest tests/test_api_config.py -v` (19 passed in 0.56s)
+  - Full suite: `$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS = "1"; .venv\Scripts\python -m pytest tests -v` (168 passed, 0 skipped, 0 failed in 712.89s)
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes: 168 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - Password with leading/trailing spaces is preserved exactly in `DatabaseConfig.password`.
+  - All 19 API config unit tests pass. Full test suite passes (168 passed, 0 failed, 0 skipped) under mandatory PostgreSQL integration testing.
+  - GitHub Actions CI verified clean on branch and PR #9 (168 passed, 0 failed).
+- Known limitations:
+  - None within tested scope.
+  - Phase 6 (Deployment, Packaging, and Portfolio Presentation) remains to be performed.
+- Next action: Await review and merge of PR #9; do not start Phase 6 before merge.
 
 
 ## Phase Entry Template

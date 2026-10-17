@@ -87,13 +87,15 @@ class ApiConfig:
                 )
 
         if user_non_empty and password_non_empty:
-            # Both provided and non-empty: use them together
+            # Both provided and non-empty: use them together.
+            # Preserve configured password exactly without stripping or modification;
+            # whitespace check in password_non_empty already rejected empty/whitespace-only passwords.
             db_conf = DatabaseConfig(
                 host=base_db.host,
                 port=base_db.port,
                 name=base_db.name,
                 user=raw_user.strip(),
-                password=raw_password.strip(),
+                password=raw_password,
             )
         elif user_non_empty != password_non_empty:
             # One is supplied non-empty while the other is blank/whitespace
