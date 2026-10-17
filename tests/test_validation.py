@@ -216,6 +216,8 @@ def test_validate_transactions_rule_checks():
         (21, 21, "txns.csv", "TXN-021", "ACC-01", TYPE_DEPOSIT, "150.00", CURRENCY_EUR, valid_ts, STATUS_COMPLETED, CHANNEL_ONLINE, None, "CORE", {}),
         # 22. Missing source_system
         (22, 22, "txns.csv", "TXN-022", "ACC-01", TYPE_DEPOSIT, "150.00", CURRENCY_USD, valid_ts, STATUS_COMPLETED, CHANNEL_ONLINE, None, "", {}),
+        # 23. Amount with > 2 decimal places (10.001) -> must be rejected under RULE_AMOUNT_RULE_VIOLATION
+        (23, 23, "txns.csv", "TXN-023", "ACC-01", TYPE_DEPOSIT, "10.001", CURRENCY_USD, valid_ts, STATUS_COMPLETED, CHANNEL_ONLINE, None, "CORE", {}),
     ]
 
     mock_cur = MagicMock()
@@ -224,7 +226,7 @@ def test_validate_transactions_rule_checks():
     valid_accounts = {"ACC-01": CURRENCY_USD}
     outcomes = engine._validate_transactions(mock_cur, "test_batch", valid_accounts)
 
-    assert len(outcomes) == 22
+    assert len(outcomes) == 23
 
     # 1. Clean valid row
     assert not outcomes[0].is_rejected
@@ -319,6 +321,11 @@ def test_validate_transactions_rule_checks():
     # 22. Missing source system
     assert outcomes[21].is_rejected
     assert any(i.rule_code == RULE_SOURCE_SYSTEM_MISSING for i in outcomes[21].issues)
+
+    # 23. Amount with > 2 decimal places (10.001)
+    assert outcomes[22].is_rejected
+    assert any(i.rule_code == RULE_AMOUNT_RULE_VIOLATION for i in outcomes[22].issues)
+    assert any("exceeds allowed monetary scale" in i.reason for i in outcomes[22].issues)
 
 
 def test_validate_branches_and_customers_and_accounts():
@@ -584,3 +591,33 @@ def test_duplicate_identifiers_not_restored_from_historical_lookups():
     assert "ACC-CURR-OK" in valid_accounts
     assert "ACC-HIST-OK" in valid_accounts
     assert valid_accounts == {"ACC-CURR-OK": "EUR", "ACC-HIST-OK": "USD"}
+
+
+def test_amount_decimal_scale_validation():
+    """Verify monetary scale contract: amounts with >2 decimal places (e.g. 10.001) are rejected."""
+    engine = ValidationEngine(conn=MagicMock())
+    mock_cur = MagicMock()
+    mock_cur.fetchall.return_value = [
+        (1, 1, "t.csv", "T1", "A1", TYPE_DEPOSIT, "10.00", CURRENCY_USD, "2026-03-01T10:00:00+00:00", STATUS_COMPLETED, CHANNEL_ONLINE, None, "CORE", {}),
+        (2, 2, "t.csv", "T2", "A1", TYPE_DEPOSIT, "10.5", CURRENCY_USD, "2026-03-01T10:00:00+00:00", STATUS_COMPLETED, CHANNEL_ONLINE, None, "CORE", {}),
+        (3, 3, "t.csv", "T3", "A1", TYPE_DEPOSIT, "10", CURRENCY_USD, "2026-03-01T10:00:00+00:00", STATUS_COMPLETED, CHANNEL_ONLINE, None, "CORE", {}),
+        (4, 4, "t.csv", "T4", "A1", TYPE_DEPOSIT, "10.001", CURRENCY_USD, "2026-03-01T10:00:00+00:00", STATUS_COMPLETED, CHANNEL_ONLINE, None, "CORE", {}),
+        (5, 5, "t.csv", "T5", "A1", TYPE_DEPOSIT, "99.999", CURRENCY_USD, "2026-03-01T10:00:00+00:00", STATUS_COMPLETED, CHANNEL_ONLINE, None, "CORE", {}),
+    ]
+
+    outcomes = engine._validate_transactions(mock_cur, "b_scale", valid_accounts={"A1": CURRENCY_USD})
+    assert len(outcomes) == 5
+
+    # 10.00, 10.5, 10 are valid
+    assert not outcomes[0].is_rejected
+    assert not outcomes[1].is_rejected
+    assert not outcomes[2].is_rejected
+
+    # 10.001 has 3 decimal places -> rejected
+    assert outcomes[3].is_rejected
+    assert any(i.rule_code == RULE_AMOUNT_RULE_VIOLATION for i in outcomes[3].issues)
+    assert any("exceeds allowed monetary scale" in i.reason for i in outcomes[3].issues)
+
+    # 99.999 has 3 decimal places -> rejected
+    assert outcomes[4].is_rejected
+    assert any(i.rule_code == RULE_AMOUNT_RULE_VIOLATION for i in outcomes[4].issues)

@@ -20,6 +20,7 @@ class WarehouseLoadingSummary:
     records_inserted: int = 0
     records_updated: int = 0
     records_skipped: int = 0
+    conflicting_replays: int = 0
     status: str = "SUCCEEDED"
     reconciliation_status: Optional[str] = None
     error_summary: Optional[str] = None

@@ -218,6 +218,9 @@ def load_cmd(batch_id: str, test_db: bool):
             click.echo(f"    - Skipped:   {summary.records_skipped} (idempotent replay)")
             recon_color = "green" if summary.reconciliation_status == "RECONCILED" else "red"
             click.secho(f"  Reconciliation: {summary.reconciliation_status}", fg=recon_color)
+            if summary.reconciliation_status != "RECONCILED":
+                click.secho(f"[ERROR] Batch '{batch_id}' failed reconciliation check.", fg="red")
+                sys.exit(1)
     except Exception as ex:
         click.secho(f"[ERROR] Warehouse loading failed: {ex}", fg="red")
         sys.exit(1)
@@ -243,6 +246,7 @@ def reconcile_cmd(batch_id: str, test_db: bool):
                 click.secho(f"[UNRECONCILED] Discrepancies detected for batch '{batch_id}':", fg="red")
                 for d in report.discrepancies:
                     click.echo(f"  - {d}")
+                sys.exit(1)
 
             click.echo("  Count Audit:")
             click.echo(f"    Extracted:    {report.extracted_count}")
@@ -301,6 +305,7 @@ def run_pipeline_cmd(input_dir: Path, batch_id: Optional[str], test_db: bool):
                 click.secho(f"   [UNRECONCILED] Discrepancies detected:", fg="red")
                 for d in report.discrepancies:
                     click.echo(f"     - {d}")
+                sys.exit(1)
 
     except Exception as ex:
         click.secho(f"[ERROR] Pipeline run failed: {ex}", fg="red")

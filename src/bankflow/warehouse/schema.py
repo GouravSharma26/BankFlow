@@ -4,23 +4,35 @@ Database schema initialization for the BankFlow Dimensional Warehouse layer.
 
 from pathlib import Path
 import psycopg2
+from bankflow.db import transaction
 
 
-def init_warehouse_schema(conn: psycopg2.extensions.connection) -> None:
+def init_warehouse_schema(conn: psycopg2.extensions.connection, force: bool = False) -> None:
     """
     Initialize the warehouse schema, conformed dimensions (date, transaction_type,
     branch, customer, account), and fact_transactions table.
     Idempotent: safe to run multiple times.
     """
+    if not force:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT (to_regclass('warehouse.fact_transactions') IS NOT NULL
+                        AND to_regclass('warehouse.dim_date') IS NOT NULL);
+            """)
+            row = cur.fetchone()
+            if row and row[0]:
+                return
+
     sql_path = Path(__file__).resolve().parent.parent.parent.parent / "sql" / "03_warehouse_schema.sql"
 
-    with conn.cursor() as cur:
-        if sql_path.exists():
-            with open(sql_path, "r", encoding="utf-8") as f:
-                cur.execute(f.read())
-        else:
-            # Inline fallback for package execution
-            cur.execute("""
+    with transaction(conn):
+        with conn.cursor() as cur:
+            if sql_path.exists():
+                with open(sql_path, "r", encoding="utf-8") as f:
+                    cur.execute(f.read())
+            else:
+                # Inline fallback for package execution
+                cur.execute("""
                 CREATE SCHEMA IF NOT EXISTS warehouse;
 
                 CREATE TABLE IF NOT EXISTS warehouse.dim_date (
@@ -55,7 +67,8 @@ def init_warehouse_schema(conn: psycopg2.extensions.connection) -> None:
                     EXTRACT(QUARTER FROM d)::INT AS quarter_number,
                     EXTRACT(YEAR FROM d)::INT AS year_number,
                     (EXTRACT(ISODOW FROM d) IN (6, 7)) AS is_weekend
-                FROM generate_series('2020-01-01'::DATE, '2035-12-31'::DATE, '1 day'::INTERVAL) d
+                FROM generate_series('2015-01-01'::DATE, '2040-12-31'::DATE, '1 day'::INTERVAL) d
+                WHERE NOT EXISTS (SELECT 1 FROM warehouse.dim_date LIMIT 1)
                 ON CONFLICT (date_key) DO NOTHING;
 
                 CREATE TABLE IF NOT EXISTS warehouse.dim_transaction_type (
@@ -66,13 +79,15 @@ def init_warehouse_schema(conn: psycopg2.extensions.connection) -> None:
                 );
 
                 INSERT INTO warehouse.dim_transaction_type (transaction_type_code, transaction_type_name, transaction_family)
-                VALUES
+                SELECT * FROM (VALUES
                     ('DEPOSIT', 'Deposit', 'CREDIT'),
                     ('WITHDRAWAL', 'Withdrawal', 'DEBIT'),
                     ('TRANSFER', 'Transfer', 'TRANSFER'),
                     ('PAYMENT', 'Payment', 'DEBIT'),
                     ('FEE', 'Fee', 'DEBIT'),
                     ('REVERSAL', 'Reversal', 'ADJUSTMENT')
+                ) AS v(transaction_type_code, transaction_type_name, transaction_family)
+                WHERE NOT EXISTS (SELECT 1 FROM warehouse.dim_transaction_type LIMIT 1)
                 ON CONFLICT (transaction_type_code) DO NOTHING;
 
                 CREATE TABLE IF NOT EXISTS warehouse.dim_branch (
@@ -145,5 +160,3 @@ def init_warehouse_schema(conn: psycopg2.extensions.connection) -> None:
                 CREATE INDEX IF NOT EXISTS idx_fact_txns_status ON warehouse.fact_transactions (status);
                 CREATE INDEX IF NOT EXISTS idx_fact_txns_currency ON warehouse.fact_transactions (currency);
             """)
-
-    conn.commit()
