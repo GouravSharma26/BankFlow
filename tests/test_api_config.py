@@ -70,6 +70,25 @@ def test_api_config_reporting_credentials_paired_override(monkeypatch):
     assert test_config.db_config.name == settings.test_db.name
 
 
+def test_reporting_credentials_password_exact_preservation(monkeypatch):
+    """Verify reporting password with leading and trailing spaces is preserved exactly without stripping."""
+    exact_password = "  secret_reporting_pw_with_spaces  "
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_USER", "  reporting_user  ")
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_PASSWORD", exact_password)
+
+    config = ApiConfig.from_env(use_test_db=False)
+
+    # Username is trimmed/normalized
+    assert config.db_config.user == "reporting_user"
+    # Password is preserved exactly without strip or modification
+    assert config.db_config.password == exact_password
+
+    # Also verify under test-db resolution
+    test_config = ApiConfig.from_env(use_test_db=True)
+    assert test_config.db_config.user == "reporting_user"
+    assert test_config.db_config.password == exact_password
+
+
 def test_reporting_credentials_username_only_raises(monkeypatch):
     """Verify providing only BANKFLOW_REPORTING_DB_USER raises ApiConfigurationError."""
     monkeypatch.setenv("BANKFLOW_REPORTING_DB_USER", "reporting_user")
