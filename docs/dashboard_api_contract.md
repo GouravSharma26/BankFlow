@@ -405,20 +405,35 @@ python -m bankflow run --input-dir data/samples --batch-id demo-batch-001
 ### 5.4 Provision Least-Privilege Reporting Role (Optional but Recommended)
 Provision the dedicated read-only role and set its password securely out-of-band:
 
-```powershell
-psql "postgresql://postgres:postgres@localhost:5432/bankflow" -f sql/06_reporting_role.sql
-psql "postgresql://postgres:postgres@localhost:5432/bankflow" -c "\password bankflow_reporting_user"
-```
-Or set via environment variable in automated deployments:
-```powershell
-psql -v REPORTING_PW="$BANKFLOW_REPORTING_DB_PASSWORD" -c "ALTER ROLE bankflow_reporting_user WITH PASSWORD :'REPORTING_PW';"
-```
+1. **Apply the role and privilege definition:**
+   ```powershell
+   psql "postgresql://postgres:postgres@localhost:5432/bankflow" -f sql/06_reporting_role.sql
+   ```
 
-Configure your local `.env`:
-```bash
-BANKFLOW_REPORTING_DB_USER=bankflow_reporting_user
-BANKFLOW_REPORTING_DB_PASSWORD=your_secure_password
-```
+2. **Set the password securely out-of-band:**
+   - **Local development (interactive psql - recommended):**
+     Connect interactively via `psql "postgresql://postgres:postgres@localhost:5432/bankflow"` and run:
+     ```sql
+     \password bankflow_reporting_user
+     ```
+     This securely prompts for the password without command-line echoing or process-table exposure.
+   - **Automated deployments:**
+     Retrieve credentials securely from a secret manager or CI secret store (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault) and provision using a non-echoing deployment pipe or secret engine. Never pass raw passwords via command-line arguments (`-v` or `-c`) that are visible in system process listings.
+
+3. **Configure application runtime:**
+   If configured, both username and password must be supplied together and non-empty:
+   ```powershell
+   # In PowerShell session:
+   $env:BANKFLOW_REPORTING_DB_USER = "bankflow_reporting_user"
+   $env:BANKFLOW_REPORTING_DB_PASSWORD = "your_secure_password"
+   ```
+   Or configure in `.env`:
+   ```bash
+   BANKFLOW_REPORTING_DB_USER=bankflow_reporting_user
+   BANKFLOW_REPORTING_DB_PASSWORD=your_secure_password
+   ```
+   *Note: If neither is set, local development safely defaults to the standard database connection.*
+
 
 ### 5.5 Launch the Reporting API Server
 Start the read-only FastAPI server:

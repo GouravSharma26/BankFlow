@@ -1,7 +1,7 @@
 """
 Unit and regression tests for BankFlow Reporting API configuration precedence.
 Verifies ApiConfig resolution, environment variable overrides, CLI precedence,
-and dedicated reporting user/password handling.
+and paired dedicated reporting user/password handling.
 """
 
 from __future__ import annotations
@@ -12,18 +12,22 @@ import pytest
 from click.testing import CliRunner
 
 from bankflow.__main__ import cli
-from bankflow.api.config import ApiConfig
+from bankflow.api.config import ApiConfig, ApiConfigurationError
 from bankflow.config import get_settings
 
 
-def test_api_config_defaults(monkeypatch):
-    """Verify default ApiConfig values when no overrides are set."""
+@pytest.fixture(autouse=True)
+def clean_reporting_env(monkeypatch):
+    """Ensure environment is strictly isolated and reporting credentials are reset."""
+    monkeypatch.delenv("BANKFLOW_REPORTING_DB_USER", raising=False)
+    monkeypatch.delenv("BANKFLOW_REPORTING_DB_PASSWORD", raising=False)
     monkeypatch.delenv("BANKFLOW_API_HOST", raising=False)
     monkeypatch.delenv("BANKFLOW_API_PORT", raising=False)
     monkeypatch.delenv("BANKFLOW_CORS_ORIGINS", raising=False)
-    monkeypatch.delenv("BANKFLOW_REPORTING_DB_USER", raising=False)
-    monkeypatch.delenv("BANKFLOW_REPORTING_DB_PASSWORD", raising=False)
 
+
+def test_api_config_defaults():
+    """Verify default ApiConfig values when no overrides are set."""
     config = ApiConfig.from_env(use_test_db=False)
     settings = get_settings()
 
@@ -33,23 +37,22 @@ def test_api_config_defaults(monkeypatch):
     assert config.db_config.port == settings.db.port
     assert config.db_config.name == settings.db.name
     assert config.db_config.user == settings.db.user
+    assert config.db_config.password == settings.db.password
     assert "https://bankflow-analytics-console.lovable.app" in config.cors_origins
 
 
-def test_api_config_test_database_resolution(monkeypatch):
+def test_api_config_test_database_resolution():
     """Verify use_test_db=True targets test database config."""
-    monkeypatch.delenv("BANKFLOW_REPORTING_DB_USER", raising=False)
-    monkeypatch.delenv("BANKFLOW_REPORTING_DB_PASSWORD", raising=False)
-
     config = ApiConfig.from_env(use_test_db=True)
     settings = get_settings()
 
     assert config.db_config.name == settings.test_db.name
     assert config.db_config.user == settings.test_db.user
+    assert config.db_config.password == settings.test_db.password
 
 
-def test_api_config_reporting_credentials_override(monkeypatch):
-    """Verify BANKFLOW_REPORTING_DB_USER and PASSWORD override default DB credentials."""
+def test_api_config_reporting_credentials_paired_override(monkeypatch):
+    """Verify BANKFLOW_REPORTING_DB_USER and PASSWORD override default DB credentials together."""
     monkeypatch.setenv("BANKFLOW_REPORTING_DB_USER", "custom_reporting_role")
     monkeypatch.setenv("BANKFLOW_REPORTING_DB_PASSWORD", "custom_reporting_pass_123")
 
@@ -65,6 +68,65 @@ def test_api_config_reporting_credentials_override(monkeypatch):
     assert test_config.db_config.user == "custom_reporting_role"
     assert test_config.db_config.password == "custom_reporting_pass_123"
     assert test_config.db_config.name == settings.test_db.name
+
+
+def test_reporting_credentials_username_only_raises(monkeypatch):
+    """Verify providing only BANKFLOW_REPORTING_DB_USER raises ApiConfigurationError."""
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_USER", "reporting_user")
+    monkeypatch.delenv("BANKFLOW_REPORTING_DB_PASSWORD", raising=False)
+
+    with pytest.raises(ApiConfigurationError) as exc_info:
+        ApiConfig.from_env()
+
+    assert "BANKFLOW_REPORTING_DB_PASSWORD is not set" in str(exc_info.value)
+
+
+def test_reporting_credentials_password_only_raises(monkeypatch):
+    """Verify providing only BANKFLOW_REPORTING_DB_PASSWORD raises ApiConfigurationError."""
+    monkeypatch.delenv("BANKFLOW_REPORTING_DB_USER", raising=False)
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_PASSWORD", "secret123")
+
+    with pytest.raises(ApiConfigurationError) as exc_info:
+        ApiConfig.from_env()
+
+    assert "BANKFLOW_REPORTING_DB_USER is not set" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("blank_val", ["", "   ", "\t"])
+def test_reporting_credentials_blank_username_with_password_raises(monkeypatch, blank_val):
+    """Verify blank username with valid password raises ApiConfigurationError without mixing credentials."""
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_USER", blank_val)
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_PASSWORD", "secret123")
+
+    with pytest.raises(ApiConfigurationError) as exc_info:
+        ApiConfig.from_env()
+
+    assert "BANKFLOW_REPORTING_DB_USER is blank" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("blank_val", ["", "   ", "\t"])
+def test_reporting_credentials_valid_username_with_blank_password_raises(monkeypatch, blank_val):
+    """Verify valid username with blank password raises ApiConfigurationError without mixing credentials."""
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_USER", "reporting_user")
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_PASSWORD", blank_val)
+
+    with pytest.raises(ApiConfigurationError) as exc_info:
+        ApiConfig.from_env()
+
+    assert "BANKFLOW_REPORTING_DB_PASSWORD is blank" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("blank_user,blank_pass", [("", ""), ("   ", "   "), ("\t", "")])
+def test_reporting_credentials_both_blank_fallback(monkeypatch, blank_user, blank_pass):
+    """Verify when both reporting credentials are blank/whitespace, fallback to standard DB config is preserved."""
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_USER", blank_user)
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_PASSWORD", blank_pass)
+
+    config = ApiConfig.from_env()
+    settings = get_settings()
+
+    assert config.db_config.user == settings.db.user
+    assert config.db_config.password == settings.db.password
 
 
 def test_api_config_cli_overrides_env_precedence(monkeypatch):
@@ -109,3 +171,16 @@ def test_bankflow_serve_cli_uses_resolved_config(mock_uvicorn_run, monkeypatch):
     call_args = mock_uvicorn_run.call_args
     assert call_args.kwargs["host"] == "127.0.0.1"
     assert call_args.kwargs["port"] == 8888
+
+
+def test_bankflow_serve_cli_fails_on_unpaired_reporting_credentials(monkeypatch):
+    """Verify 'bankflow serve' exits with code 1 and error message on unpaired reporting credentials."""
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_USER", "unpaired_user")
+    monkeypatch.delenv("BANKFLOW_REPORTING_DB_PASSWORD", raising=False)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["serve"])
+
+    assert result.exit_code == 1
+    assert "API Configuration Error" in result.output
+    assert "BANKFLOW_REPORTING_DB_PASSWORD is not set" in result.output

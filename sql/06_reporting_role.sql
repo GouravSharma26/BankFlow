@@ -1,14 +1,22 @@
 -- SECURE PASSWORD PROVISIONING:
 -- Passwords must never be hardcoded or checked into version control.
 -- After running this script, set or rotate the reporting user password securely out-of-band:
---   Option A (Interactive psql):
---     \password bankflow_reporting_user
---   Option B (Environment-driven via psql variable):
---     psql -v REPORTING_PW="$BANKFLOW_REPORTING_DB_PASSWORD" -c "ALTER ROLE bankflow_reporting_user WITH PASSWORD :'REPORTING_PW';"
 --
--- Then configure your application runtime (.env):
---   BANKFLOW_REPORTING_DB_USER=bankflow_reporting_user
---   BANKFLOW_REPORTING_DB_PASSWORD=<secure_password>
+-- Local Setup (Interactive psql - recommended):
+--   Connect interactively via psql and set password without command-line echoing:
+--     \password bankflow_reporting_user
+--
+-- Automated Deployments:
+--   Retrieve credentials securely from a secret manager or CI secret store (e.g. AWS Secrets
+--   Manager, GCP Secret Manager, HashiCorp Vault) and provision using a non-echoing approach
+--   appropriate to the deployment environment (e.g. deployment runner stdin pipe, Vault database
+--   secrets engine, or managed cloud IAM). Never expose passwords via command-line flags (-v, -c)
+--   that appear in system process listings.
+--
+-- Application Runtime Configuration (.env):
+--   Both credentials must be configured together (never partially supplied):
+--     BANKFLOW_REPORTING_DB_USER=bankflow_reporting_user
+--     BANKFLOW_REPORTING_DB_PASSWORD=<secure_password>
 
 DO $$
 BEGIN

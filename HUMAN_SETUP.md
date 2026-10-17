@@ -135,15 +135,33 @@ If PowerShell blocks virtual-environment activation, use an allowed terminal con
    ```
 
 10. **Provision least-privilege reporting role:**
+    Create the reporting role using the schema script:
     ```powershell
     psql "postgresql://postgres:postgres@localhost:5432/bankflow" -f sql/06_reporting_role.sql
-    psql "postgresql://postgres:postgres@localhost:5432/bankflow" -c "\password bankflow_reporting_user"
     ```
-    Set credentials in `.env`:
+    Set the password securely out-of-band:
+    - **Local setup (interactive psql - recommended):**
+      Connect interactively via `psql "postgresql://postgres:postgres@localhost:5432/bankflow"` and run:
+      ```sql
+      \password bankflow_reporting_user
+      ```
+      This prompts for the new password without terminal command echoing or process-table exposure.
+    - **Automated deployments:**
+      Retrieve credentials securely from a secret manager (e.g. AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault) and provision using a non-echoing deployment pipe or secret engine. Never expose passwords in command-line arguments.
+
+    Configure credentials together (both must be non-empty):
+    ```powershell
+    # In PowerShell session:
+    $env:BANKFLOW_REPORTING_DB_USER = "bankflow_reporting_user"
+    $env:BANKFLOW_REPORTING_DB_PASSWORD = "your_secure_password"
+    ```
+    Or configure in `.env`:
     ```bash
     BANKFLOW_REPORTING_DB_USER=bankflow_reporting_user
     BANKFLOW_REPORTING_DB_PASSWORD=your_secure_password
     ```
+    *Note: If neither is set, local development safely defaults to the standard database connection.*
+
 
 11. **Start read-only Reporting API:**
     ```powershell
