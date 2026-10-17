@@ -2,7 +2,10 @@
 
 BankFlow is a Python and PostgreSQL portfolio project demonstrating an end-to-end batch ETL workflow on **synthetic banking data**. It ingests CSV files, preserves source lineage, validates data contracts, quarantines rejected records, loads a dimensional warehouse, detects duplicate/conflicting replays, and reconciles batch outcomes.
 
-> **Scope:** BankFlow is a CLI-based data engineering project, not a banking product or hosted web dashboard. It does not connect to real banks, move money, or use real customer data. The implemented core includes ETL staging, validation/quarantine, dimensional loading, replay protection, and reconciliation. Cloud scheduling and a BI dashboard are optional follow-up work.
+> **Scope:** BankFlow is an educational data engineering portfolio project using synthetic data only. It does not connect to real banks, process real customer records, or move real money. The implemented system includes batch ETL staging, contract validation, quarantine, a dimensional warehouse, idempotent replay protection, count/monetary reconciliation, SQL analytics, a read-only reporting API, and CI automation.
+
+> [!TIP]
+> **Reviewers & Interviewers:** See [`docs/demo_walkthrough.md`](docs/demo_walkthrough.md) for a step-by-step reproducible demonstration guide and interview talking points covering architecture, idempotency, data quality, and failure handling.
 
 ## Highlights
 
@@ -172,7 +175,7 @@ Reporting Views (PostgreSQL `reporting` schema)
              Lovable Analytics Console
 ```
 
-Further details: [architecture](docs/architecture.md) · [dashboard API contract](docs/dashboard_api_contract.md) · [data contract](docs/data_contract.md) · [data dictionary](docs/data_dictionary.md) · [quality rules](docs/data_quality_rules.md) · [metric definitions](docs/metric_definitions.md) · [testing strategy](docs/testing_strategy.md) · [developer setup](HUMAN_SETUP.md) · [development checklist](DEVELOPMENT_CHECKLIST.md).
+Further details: [portfolio demo walk-through](docs/demo_walkthrough.md) · [architecture](docs/architecture.md) · [dashboard API contract](docs/dashboard_api_contract.md) · [data contract](docs/data_contract.md) · [data dictionary](docs/data_dictionary.md) · [quality rules](docs/data_quality_rules.md) · [metric definitions](docs/metric_definitions.md) · [testing strategy](docs/testing_strategy.md) · [developer setup](HUMAN_SETUP.md) · [development checklist](DEVELOPMENT_CHECKLIST.md).
 
 ## Deployment notes and limitations
 
