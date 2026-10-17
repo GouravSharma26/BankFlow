@@ -131,6 +131,7 @@ class ReconciliationEngine:
                   AND NOT EXISTS (
                       SELECT 1 FROM warehouse.fact_transactions ft
                       JOIN warehouse.dim_account da ON ft.account_key = da.account_key
+                      JOIN warehouse.dim_transaction_type dtt ON ft.type_key = dtt.type_key
                       WHERE ft.source_system = COALESCE(NULLIF(TRIM(st.source_system), ''), 'CORE_BANKING')
                         AND ft.transaction_id = TRIM(st.transaction_id)
                         AND ft.source_batch_id != st.batch_id
@@ -139,6 +140,8 @@ class ReconciliationEngine:
                         AND TRIM(ft.status) = TRIM(st.status)
                         AND TRIM(da.account_id) = TRIM(st.account_id)
                         AND ft.transaction_timestamp = st.transaction_timestamp_raw::TIMESTAMPTZ
+                        AND TRIM(dtt.transaction_type_code) = TRIM(st.transaction_type)
+                        AND TRIM(ft.channel) = TRIM(st.channel)
                   )
                 GROUP BY TRIM(st.currency), TRIM(st.status);
             """, (batch_id,))

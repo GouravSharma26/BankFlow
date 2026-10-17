@@ -4,6 +4,7 @@ Warehouse Schema, Dimensional Loading, Database Idempotency, and Reconciliation.
 """
 
 import os
+import threading
 import uuid
 from decimal import Decimal
 from pathlib import Path
@@ -804,3 +805,292 @@ def test_warehouse_extended_date_dimension_support(postgres_test_db, tmp_path):
 
             cur.execute("SELECT date_key FROM warehouse.fact_transactions WHERE transaction_id = 'TXN-FUTURE-1';")
             assert cur.fetchone()[0] == 20420810
+
+
+@pytest.mark.integration
+def test_warehouse_conflicting_replay_changed_type_and_channel_independently(postgres_test_db, tmp_path):
+    """
+    Verify that an existing event replayed with:
+    1. Changed transaction_type (DEPOSIT -> WITHDRAWAL)
+    2. Changed channel (ONLINE -> ATM)
+    are independently classified as RULE_CONFLICTING_REPLAY_PAYLOAD, quarantined, and fail reconciliation.
+    Also verifies that an identical replay is accepted and skipped safely.
+    """
+    # 1. Base batch (original event: DEPOSIT, ONLINE)
+    dataset_dir_1 = tmp_path / "replay_base"
+    dataset_dir_1.mkdir(parents=True, exist_ok=True)
+    (dataset_dir_1 / "branches.csv").write_text("branch_id,branch_name,region\nBR-IND-1,Branch Ind,WEST\n", encoding="utf-8")
+    (dataset_dir_1 / "customers.csv").write_text("customer_id,customer_segment,created_date,customer_status\nCUST-IND-1,RETAIL,2026-01-01,ACTIVE\n", encoding="utf-8")
+    (dataset_dir_1 / "accounts.csv").write_text("account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\nACC-IND-1,CUST-IND-1,BR-IND-1,CHECKING,OPEN,2026-01-01,USD\n", encoding="utf-8")
+    (dataset_dir_1 / "transactions.csv").write_text(
+        "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+        "TXN-IND-1,ACC-IND-1,DEPOSIT,100.00,USD,2026-03-01T12:00:00+00:00,COMPLETED,ONLINE,,CORE\n",
+        encoding="utf-8"
+    )
+
+    batch_1 = f"batch-ind-1-{uuid.uuid4().hex[:8]}"
+
+    with get_connection(postgres_test_db) as conn:
+        loader = StagingLoader(conn)
+        val = ValidationEngine(conn)
+        wh = WarehouseLoader(conn)
+
+        loader.ingest_dataset_directory(dataset_dir_1, batch_id=batch_1)
+        val.validate_batch(batch_1)
+        summary_1 = wh.load_batch(batch_1)
+        assert summary_1.records_inserted == 1
+        assert summary_1.reconciliation_status == "RECONCILED"
+
+        # 2. Batch 2: Changed transaction_type independently (WITHDRAWAL instead of DEPOSIT)
+        dataset_dir_2 = tmp_path / "replay_changed_type"
+        dataset_dir_2.mkdir(parents=True, exist_ok=True)
+        (dataset_dir_2 / "branches.csv").write_text("branch_id,branch_name,region\nBR-IND-1,Branch Ind,WEST\n", encoding="utf-8")
+        (dataset_dir_2 / "customers.csv").write_text("customer_id,customer_segment,created_date,customer_status\nCUST-IND-1,RETAIL,2026-01-01,ACTIVE\n", encoding="utf-8")
+        (dataset_dir_2 / "accounts.csv").write_text("account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\nACC-IND-1,CUST-IND-1,BR-IND-1,CHECKING,OPEN,2026-01-01,USD\n", encoding="utf-8")
+        (dataset_dir_2 / "transactions.csv").write_text(
+            "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+            "TXN-IND-1,ACC-IND-1,WITHDRAWAL,100.00,USD,2026-03-01T12:00:00+00:00,COMPLETED,ONLINE,,CORE\n",
+            encoding="utf-8"
+        )
+        batch_2 = f"batch-ind-2-{uuid.uuid4().hex[:8]}"
+        loader.ingest_dataset_directory(dataset_dir_2, batch_id=batch_2)
+        val.validate_batch(batch_2)
+        summary_2 = wh.load_batch(batch_2)
+
+        assert summary_2.records_inserted == 0
+        assert summary_2.records_skipped == 0
+        assert summary_2.conflicting_replays == 1
+        assert summary_2.reconciliation_status == "UNRECONCILED"
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT rule_code, severity, disposition, reason
+                FROM monitoring.data_quality_issues
+                WHERE batch_id = %s AND rule_code = %s;
+            """, (batch_2, RULE_CONFLICTING_REPLAY_PAYLOAD))
+            issue = cur.fetchone()
+            assert issue is not None
+            assert issue[0] == RULE_CONFLICTING_REPLAY_PAYLOAD
+            assert "transaction_type" in issue[3]
+
+            cur.execute("SELECT count(*) FROM quarantine.quarantined_records WHERE batch_id = %s;", (batch_2,))
+            assert cur.fetchone()[0] == 1
+
+        # 3. Batch 3: Changed channel independently (ATM instead of ONLINE, with original DEPOSIT)
+        dataset_dir_3 = tmp_path / "replay_changed_chan"
+        dataset_dir_3.mkdir(parents=True, exist_ok=True)
+        (dataset_dir_3 / "branches.csv").write_text("branch_id,branch_name,region\nBR-IND-1,Branch Ind,WEST\n", encoding="utf-8")
+        (dataset_dir_3 / "customers.csv").write_text("customer_id,customer_segment,created_date,customer_status\nCUST-IND-1,RETAIL,2026-01-01,ACTIVE\n", encoding="utf-8")
+        (dataset_dir_3 / "accounts.csv").write_text("account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\nACC-IND-1,CUST-IND-1,BR-IND-1,CHECKING,OPEN,2026-01-01,USD\n", encoding="utf-8")
+        (dataset_dir_3 / "transactions.csv").write_text(
+            "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+            "TXN-IND-1,ACC-IND-1,DEPOSIT,100.00,USD,2026-03-01T12:00:00+00:00,COMPLETED,ATM,,CORE\n",
+            encoding="utf-8"
+        )
+        batch_3 = f"batch-ind-3-{uuid.uuid4().hex[:8]}"
+        loader.ingest_dataset_directory(dataset_dir_3, batch_id=batch_3)
+        val.validate_batch(batch_3)
+        summary_3 = wh.load_batch(batch_3)
+
+        assert summary_3.records_inserted == 0
+        assert summary_3.records_skipped == 0
+        assert summary_3.conflicting_replays == 1
+        assert summary_3.reconciliation_status == "UNRECONCILED"
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT rule_code, severity, disposition, reason
+                FROM monitoring.data_quality_issues
+                WHERE batch_id = %s AND rule_code = %s;
+            """, (batch_3, RULE_CONFLICTING_REPLAY_PAYLOAD))
+            issue = cur.fetchone()
+            assert issue is not None
+            assert issue[0] == RULE_CONFLICTING_REPLAY_PAYLOAD
+            assert "channel" in issue[3]
+
+            cur.execute("SELECT count(*) FROM quarantine.quarantined_records WHERE batch_id = %s;", (batch_3,))
+            assert cur.fetchone()[0] == 1
+
+        # 4. Batch 4: Identical replay (all fields match original Batch 1)
+        dataset_dir_4 = tmp_path / "replay_identical"
+        dataset_dir_4.mkdir(parents=True, exist_ok=True)
+        (dataset_dir_4 / "branches.csv").write_text("branch_id,branch_name,region\nBR-IND-1,Branch Ind,WEST\n", encoding="utf-8")
+        (dataset_dir_4 / "customers.csv").write_text("customer_id,customer_segment,created_date,customer_status\nCUST-IND-1,RETAIL,2026-01-01,ACTIVE\n", encoding="utf-8")
+        (dataset_dir_4 / "accounts.csv").write_text("account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\nACC-IND-1,CUST-IND-1,BR-IND-1,CHECKING,OPEN,2026-01-01,USD\n", encoding="utf-8")
+        (dataset_dir_4 / "transactions.csv").write_text(
+            "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+            "TXN-IND-1,ACC-IND-1,DEPOSIT,100.00,USD,2026-03-01T12:00:00+00:00,COMPLETED,ONLINE,,CORE\n",
+            encoding="utf-8"
+        )
+        batch_4 = f"batch-ind-4-{uuid.uuid4().hex[:8]}"
+        loader.ingest_dataset_directory(dataset_dir_4, batch_id=batch_4)
+        val.validate_batch(batch_4)
+        summary_4 = wh.load_batch(batch_4)
+
+        assert summary_4.records_inserted == 0
+        assert summary_4.records_skipped == 1
+        assert summary_4.conflicting_replays == 0
+        assert summary_4.reconciliation_status == "RECONCILED"
+
+
+@pytest.mark.integration
+def test_warehouse_concurrent_loads_atomic_replay_safety(postgres_test_db, tmp_path):
+    """
+    Verify that concurrent warehouse loads across separate database connections:
+    1. Do not cause unhandled uniqueness violations.
+    2. Atomic INSERT ... ON CONFLICT DO NOTHING ensures exactly 1 fact is created.
+    3. The losing concurrent batch correctly classifies the collision as an identical replay
+       or a conflicting replay rather than failing.
+    """
+    # 1. Setup shared dimension files for concurrent identical replay
+    dataset_dir_1 = tmp_path / "concurrent_batch_1"
+    dataset_dir_1.mkdir(parents=True, exist_ok=True)
+    (dataset_dir_1 / "branches.csv").write_text("branch_id,branch_name,region\nBR-CONC-1,Concurrent Branch,WEST\n", encoding="utf-8")
+    (dataset_dir_1 / "customers.csv").write_text("customer_id,customer_segment,created_date,customer_status\nCUST-CONC-1,RETAIL,2026-01-01,ACTIVE\n", encoding="utf-8")
+    (dataset_dir_1 / "accounts.csv").write_text("account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\nACC-CONC-1,CUST-CONC-1,BR-CONC-1,CHECKING,OPEN,2026-01-01,USD\n", encoding="utf-8")
+    (dataset_dir_1 / "transactions.csv").write_text(
+        "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+        "TXN-CONC-1,ACC-CONC-1,DEPOSIT,100.00,USD,2026-03-01T12:00:00+00:00,COMPLETED,ONLINE,,CORE\n",
+        encoding="utf-8"
+    )
+
+    dataset_dir_2 = tmp_path / "concurrent_batch_2"
+    dataset_dir_2.mkdir(parents=True, exist_ok=True)
+    (dataset_dir_2 / "branches.csv").write_text("branch_id,branch_name,region\nBR-CONC-1,Concurrent Branch,WEST\n", encoding="utf-8")
+    (dataset_dir_2 / "customers.csv").write_text("customer_id,customer_segment,created_date,customer_status\nCUST-CONC-1,RETAIL,2026-01-01,ACTIVE\n", encoding="utf-8")
+    (dataset_dir_2 / "accounts.csv").write_text("account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\nACC-CONC-1,CUST-CONC-1,BR-CONC-1,CHECKING,OPEN,2026-01-01,USD\n", encoding="utf-8")
+    (dataset_dir_2 / "transactions.csv").write_text(
+        "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+        "TXN-CONC-1,ACC-CONC-1,DEPOSIT,100.00,USD,2026-03-01T12:00:00+00:00,COMPLETED,ONLINE,,CORE\n",
+        encoding="utf-8"
+    )
+
+    batch_1 = f"batch-conc-1-{uuid.uuid4().hex[:8]}"
+    batch_2 = f"batch-conc-2-{uuid.uuid4().hex[:8]}"
+
+    # Ingest and validate both batches
+    with get_connection(postgres_test_db) as conn:
+        loader = StagingLoader(conn)
+        val = ValidationEngine(conn)
+        loader.ingest_dataset_directory(dataset_dir_1, batch_id=batch_1)
+        val.validate_batch(batch_1)
+        loader.ingest_dataset_directory(dataset_dir_2, batch_id=batch_2)
+        val.validate_batch(batch_2)
+
+    # Now load both batches CONCURRENTLY using separate connections and threads
+    results = {}
+    barrier = threading.Barrier(2)
+
+    def worker(b_id, idx):
+        try:
+            with get_connection(postgres_test_db) as thread_conn:
+                wh = WarehouseLoader(thread_conn)
+                barrier.wait()
+                summary = wh.load_batch(b_id)
+                results[idx] = ("success", summary)
+        except Exception as exc:
+            results[idx] = ("error", exc)
+
+    t1 = threading.Thread(target=worker, args=(batch_1, 1))
+    t2 = threading.Thread(target=worker, args=(batch_2, 2))
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    # Neither thread should encounter an unhandled exception or uniqueness error
+    assert results[1][0] == "success", f"Thread 1 failed: {results[1][1]}"
+    assert results[2][0] == "success", f"Thread 2 failed: {results[2][1]}"
+
+    sum_1 = results[1][1]
+    sum_2 = results[2][1]
+
+    # Exactly one thread inserts the fact, and the other safely skips as identical replay
+    total_inserted = sum_1.records_inserted + sum_2.records_inserted
+    total_skipped = sum_1.records_skipped + sum_2.records_skipped
+    assert total_inserted == 1
+    assert total_skipped == 1
+
+    # Check warehouse facts: exactly 1 fact exists
+    with get_connection(postgres_test_db) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM warehouse.fact_transactions WHERE transaction_id = 'TXN-CONC-1';")
+            assert cur.fetchone()[0] == 1
+
+    # Part B: Concurrent conflicting replays (differing amounts: 500.00 vs 999.00)
+    dataset_dir_3 = tmp_path / "concurrent_batch_3"
+    dataset_dir_3.mkdir(parents=True, exist_ok=True)
+    (dataset_dir_3 / "branches.csv").write_text("branch_id,branch_name,region\nBR-CONC-1,Concurrent Branch,WEST\n", encoding="utf-8")
+    (dataset_dir_3 / "customers.csv").write_text("customer_id,customer_segment,created_date,customer_status\nCUST-CONC-1,RETAIL,2026-01-01,ACTIVE\n", encoding="utf-8")
+    (dataset_dir_3 / "accounts.csv").write_text("account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\nACC-CONC-1,CUST-CONC-1,BR-CONC-1,CHECKING,OPEN,2026-01-01,USD\n", encoding="utf-8")
+    (dataset_dir_3 / "transactions.csv").write_text(
+        "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+        "TXN-CONC-2,ACC-CONC-1,DEPOSIT,500.00,USD,2026-03-01T12:00:00+00:00,COMPLETED,ONLINE,,CORE\n",
+        encoding="utf-8"
+    )
+
+    dataset_dir_4 = tmp_path / "concurrent_batch_4"
+    dataset_dir_4.mkdir(parents=True, exist_ok=True)
+    (dataset_dir_4 / "branches.csv").write_text("branch_id,branch_name,region\nBR-CONC-1,Concurrent Branch,WEST\n", encoding="utf-8")
+    (dataset_dir_4 / "customers.csv").write_text("customer_id,customer_segment,created_date,customer_status\nCUST-CONC-1,RETAIL,2026-01-01,ACTIVE\n", encoding="utf-8")
+    (dataset_dir_4 / "accounts.csv").write_text("account_id,customer_id,branch_id,account_type,account_status,opened_date,currency\nACC-CONC-1,CUST-CONC-1,BR-CONC-1,CHECKING,OPEN,2026-01-01,USD\n", encoding="utf-8")
+    (dataset_dir_4 / "transactions.csv").write_text(
+        "transaction_id,account_id,transaction_type,amount,currency,transaction_timestamp,status,channel,counterparty_account_id,source_system\n"
+        "TXN-CONC-2,ACC-CONC-1,DEPOSIT,999.00,USD,2026-03-01T12:00:00+00:00,COMPLETED,ONLINE,,CORE\n",
+        encoding="utf-8"
+    )
+
+    batch_3 = f"batch-conc-3-{uuid.uuid4().hex[:8]}"
+    batch_4 = f"batch-conc-4-{uuid.uuid4().hex[:8]}"
+
+    with get_connection(postgres_test_db) as conn:
+        loader = StagingLoader(conn)
+        val = ValidationEngine(conn)
+        loader.ingest_dataset_directory(dataset_dir_3, batch_id=batch_3)
+        val.validate_batch(batch_3)
+        loader.ingest_dataset_directory(dataset_dir_4, batch_id=batch_4)
+        val.validate_batch(batch_4)
+
+    results_conflict = {}
+    barrier_conflict = threading.Barrier(2)
+
+    def worker_conflict(b_id, idx):
+        try:
+            with get_connection(postgres_test_db) as thread_conn:
+                wh = WarehouseLoader(thread_conn)
+                barrier_conflict.wait()
+                summary = wh.load_batch(b_id)
+                results_conflict[idx] = ("success", summary)
+        except Exception as exc:
+            results_conflict[idx] = ("error", exc)
+
+    t3 = threading.Thread(target=worker_conflict, args=(batch_3, 3))
+    t4 = threading.Thread(target=worker_conflict, args=(batch_4, 4))
+    t3.start()
+    t4.start()
+    t3.join()
+    t4.join()
+
+    assert results_conflict[3][0] == "success", f"Thread 3 failed: {results_conflict[3][1]}"
+    assert results_conflict[4][0] == "success", f"Thread 4 failed: {results_conflict[4][1]}"
+
+    sum_3 = results_conflict[3][1]
+    sum_4 = results_conflict[4][1]
+
+    # Exactly one thread inserts 1 fact, the other is classified as conflicting replay (0 inserted, 1 conflicting)
+    total_inserted_c = sum_3.records_inserted + sum_4.records_inserted
+    total_conflicting_c = sum_3.conflicting_replays + sum_4.conflicting_replays
+    assert total_inserted_c == 1
+    assert total_conflicting_c == 1
+
+    # Exactly 1 fact in warehouse
+    with get_connection(postgres_test_db) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM warehouse.fact_transactions WHERE transaction_id = 'TXN-CONC-2';")
+            assert cur.fetchone()[0] == 1
+            cur.execute("""
+                SELECT count(*) FROM quarantine.quarantined_records
+                WHERE primary_rule_code = %s AND batch_id IN (%s, %s);
+            """, (RULE_CONFLICTING_REPLAY_PAYLOAD, batch_3, batch_4))
+            assert cur.fetchone()[0] == 1

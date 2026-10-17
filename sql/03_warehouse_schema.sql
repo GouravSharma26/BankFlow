@@ -39,6 +39,7 @@ SELECT
     EXTRACT(YEAR FROM d)::INT AS year_number,
     (EXTRACT(ISODOW FROM d) IN (6, 7)) AS is_weekend
 FROM generate_series('2015-01-01'::DATE, '2040-12-31'::DATE, '1 day'::INTERVAL) d
+WHERE NOT EXISTS (SELECT 1 FROM warehouse.dim_date LIMIT 1)
 ON CONFLICT (date_key) DO NOTHING;
 
 -- 3. Transaction Type Dimension
@@ -51,13 +52,15 @@ CREATE TABLE IF NOT EXISTS warehouse.dim_transaction_type (
 
 -- Seed Transaction Type Dimension
 INSERT INTO warehouse.dim_transaction_type (transaction_type_code, transaction_type_name, transaction_family)
-VALUES
+SELECT * FROM (VALUES
     ('DEPOSIT', 'Deposit', 'CREDIT'),
     ('WITHDRAWAL', 'Withdrawal', 'DEBIT'),
     ('TRANSFER', 'Transfer', 'TRANSFER'),
     ('PAYMENT', 'Payment', 'DEBIT'),
     ('FEE', 'Fee', 'DEBIT'),
     ('REVERSAL', 'Reversal', 'ADJUSTMENT')
+) AS v(transaction_type_code, transaction_type_name, transaction_family)
+WHERE NOT EXISTS (SELECT 1 FROM warehouse.dim_transaction_type LIMIT 1)
 ON CONFLICT (transaction_type_code) DO NOTHING;
 
 -- 4. Branch Dimension

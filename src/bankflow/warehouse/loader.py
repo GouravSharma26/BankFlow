@@ -101,15 +101,17 @@ class WarehouseLoader:
 
                 summary.status = status
 
-                # 6. Update batch metrics in monitoring.etl_batch_runs
+                # 6. Update batch metrics and accounting once in monitoring.etl_batch_runs
                 cur.execute("""
                     UPDATE monitoring.etl_batch_runs
-                    SET records_inserted = %s,
+                    SET records_valid = records_valid - %s,
+                        records_rejected = records_rejected + %s,
+                        records_inserted = %s,
                         records_skipped = %s,
                         status = %s,
                         completed_at = CURRENT_TIMESTAMP
                     WHERE batch_id = %s;
-                """, (summary.records_inserted, summary.records_skipped, summary.status, batch_id))
+                """, (conflicting, conflicting, summary.records_inserted, summary.records_skipped, summary.status, batch_id))
 
         # 7. Run count and value reconciliation audit
         recon_engine = ReconciliationEngine(self.conn)
@@ -213,26 +215,42 @@ class WarehouseLoader:
         row = cur.fetchone()
         if row and row[0] and row[1]:
             min_date, max_date = row
+            # Only insert if any date in the batch range is actually missing from warehouse.dim_date
             cur.execute("""
-                INSERT INTO warehouse.dim_date (
-                    date_key, full_date, day_of_month, day_of_week, day_name,
-                    week_of_year, month_number, month_name, quarter_number, year_number, is_weekend
-                )
-                SELECT
-                    TO_CHAR(d, 'YYYYMMDD')::INT AS date_key,
-                    d::DATE AS full_date,
-                    EXTRACT(DAY FROM d)::INT AS day_of_month,
-                    EXTRACT(ISODOW FROM d)::INT AS day_of_week,
-                    TRIM(TO_CHAR(d, 'Day')) AS day_name,
-                    EXTRACT(WEEK FROM d)::INT AS week_of_year,
-                    EXTRACT(MONTH FROM d)::INT AS month_number,
-                    TRIM(TO_CHAR(d, 'Month')) AS month_name,
-                    EXTRACT(QUARTER FROM d)::INT AS quarter_number,
-                    EXTRACT(YEAR FROM d)::INT AS year_number,
-                    (EXTRACT(ISODOW FROM d) IN (6, 7)) AS is_weekend
+                SELECT 1
                 FROM generate_series(%s::DATE, %s::DATE, '1 day'::INTERVAL) d
-                ON CONFLICT (date_key) DO NOTHING;
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM warehouse.dim_date dd
+                    WHERE dd.date_key = TO_CHAR(d, 'YYYYMMDD')::INT
+                )
+                LIMIT 1;
             """, (min_date, max_date))
+            if cur.fetchone():
+                cur.execute("""
+                    INSERT INTO warehouse.dim_date (
+                        date_key, full_date, day_of_month, day_of_week, day_name,
+                        week_of_year, month_number, month_name, quarter_number, year_number, is_weekend
+                    )
+                    SELECT
+                        TO_CHAR(d, 'YYYYMMDD')::INT AS date_key,
+                        d::DATE AS full_date,
+                        EXTRACT(DAY FROM d)::INT AS day_of_month,
+                        EXTRACT(ISODOW FROM d)::INT AS day_of_week,
+                        TRIM(TO_CHAR(d, 'Day')) AS day_name,
+                        EXTRACT(WEEK FROM d)::INT AS week_of_year,
+                        EXTRACT(MONTH FROM d)::INT AS month_number,
+                        TRIM(TO_CHAR(d, 'Month')) AS month_name,
+                        EXTRACT(QUARTER FROM d)::INT AS quarter_number,
+                        EXTRACT(YEAR FROM d)::INT AS year_number,
+                        (EXTRACT(ISODOW FROM d) IN (6, 7)) AS is_weekend
+                    FROM generate_series(%s::DATE, %s::DATE, '1 day'::INTERVAL) d
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM warehouse.dim_date dd
+                        WHERE dd.date_key = TO_CHAR(d, 'YYYYMMDD')::INT
+                    )
+                    ORDER BY d
+                    ON CONFLICT (date_key) DO NOTHING;
+                """, (min_date, max_date, min_date, max_date))
 
     def _load_branches(self, cur: psycopg2.extensions.cursor, batch_id: str) -> int:
         cur.execute("""
@@ -346,7 +364,8 @@ class WarehouseLoader:
                 TRIM(st.status) AS status,
                 TRIM(st.channel) AS channel,
                 st.transaction_timestamp_raw::TIMESTAMPTZ AS transaction_timestamp,
-                TRIM(st.account_id) AS account_id
+                TRIM(st.account_id) AS account_id,
+                TRIM(st.transaction_type) AS transaction_type
             FROM staging.stg_transactions st
             JOIN warehouse.dim_account da ON TRIM(st.account_id) = da.account_id
             JOIN warehouse.dim_transaction_type dtt ON TRIM(st.transaction_type) = dtt.transaction_type_code
@@ -383,105 +402,146 @@ class WarehouseLoader:
                 chan,
                 ts,
                 acc_id,
+                txn_type,
             ) = row
 
-            # Check if this source event identity already exists in warehouse
+            # 1. Atomic insertion with ON CONFLICT (source_system, transaction_id) DO NOTHING
             cur.execute("""
-                SELECT ft.transaction_key, ft.amount, ft.currency, ft.status, da.account_id, ft.transaction_timestamp
-                FROM warehouse.fact_transactions ft
-                JOIN warehouse.dim_account da ON ft.account_key = da.account_key
-                WHERE ft.source_system = %s AND ft.transaction_id = %s;
-            """, (clean_sys, clean_tid))
-            existing = cur.fetchone()
+                INSERT INTO warehouse.fact_transactions (
+                    transaction_id, source_system, account_key, customer_key, branch_key,
+                    date_key, type_key, amount, currency, status, channel,
+                    transaction_timestamp, source_batch_id, source_row_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (source_system, transaction_id) DO NOTHING
+                RETURNING transaction_key;
+            """, (
+                clean_tid,
+                clean_sys,
+                acc_key,
+                cust_key,
+                br_key,
+                date_key,
+                type_key,
+                amt,
+                curr,
+                stat,
+                chan,
+                ts,
+                batch_id,
+                row_id,
+            ))
+            insert_res = cur.fetchone()
 
-            if existing is not None:
-                (
-                    exist_key,
-                    exist_amt,
-                    exist_curr,
-                    exist_stat,
-                    exist_acc_id,
-                    exist_ts,
-                ) = existing
-
-                # Compare existing warehouse fact payload with incoming staging row
-                same_amount = (Decimal(str(exist_amt)) == Decimal(str(amt)))
-                same_curr = (exist_curr.strip() == curr)
-                same_status = (exist_stat.strip() == stat)
-                same_acc = (exist_acc_id.strip() == acc_id)
-                same_ts = (exist_ts == ts)
-
-                if same_amount and same_curr and same_status and same_acc and same_ts:
-                    # Identical replay: skip safely
-                    skipped += 1
-                    replay_issues.append((
-                        uuid.uuid4().hex,
-                        batch_id,
-                        "TRANSACTION",
-                        row_id,
-                        row_num,
-                        file_name,
-                        RULE_SOURCE_REPLAY_SKIPPED,
-                        SEVERITY_INFO,
-                        f"Transaction event '{clean_tid}' in system '{clean_sys}' already loaded in warehouse; skipped under idempotency contract.",
-                        DISPOSITION_SKIPPED,
-                    ))
-                else:
-                    # Conflicting replay: payload mismatch for immutable event!
-                    conflicting += 1
-                    reason_msg = (
-                        f"Conflicting replay: event '{clean_tid}' in system '{clean_sys}' already exists in warehouse with different payload "
-                        f"(existing: amount={exist_amt} {exist_curr.strip()} status={exist_stat.strip()} account={exist_acc_id.strip()}; "
-                        f"incoming: amount={amt} {curr} status={stat} account={acc_id})."
-                    )
-                    replay_issues.append((
-                        uuid.uuid4().hex,
-                        batch_id,
-                        "TRANSACTION",
-                        row_id,
-                        row_num,
-                        file_name,
-                        RULE_CONFLICTING_REPLAY_PAYLOAD,
-                        SEVERITY_ERROR,
-                        reason_msg,
-                        DISPOSITION_REJECTED,
-                    ))
-                    conflicting_quarantines.append((
-                        uuid.uuid4().hex,
-                        batch_id,
-                        "TRANSACTION",
-                        row_id,
-                        row_num,
-                        file_name,
-                        RULE_CONFLICTING_REPLAY_PAYLOAD,
-                        1,
-                    ))
-            else:
-                # New event: insert into warehouse facts
-                cur.execute("""
-                    INSERT INTO warehouse.fact_transactions (
-                        transaction_id, source_system, account_key, customer_key, branch_key,
-                        date_key, type_key, amount, currency, status, channel,
-                        transaction_timestamp, source_batch_id, source_row_id
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING transaction_key;
-                """, (
-                    clean_tid,
-                    clean_sys,
-                    acc_key,
-                    cust_key,
-                    br_key,
-                    date_key,
-                    type_key,
-                    amt,
-                    curr,
-                    stat,
-                    chan,
-                    ts,
-                    batch_id,
-                    row_id,
-                ))
+            if insert_res is not None:
+                # Successfully inserted new fact
                 inserted += 1
+            else:
+                # 2. Insertion did not occur due to uniqueness conflict!
+                # Retrieve the existing committed event and compare its complete immutable payload
+                cur.execute("""
+                    SELECT
+                        ft.transaction_key,
+                        ft.amount,
+                        ft.currency,
+                        ft.status,
+                        da.account_id,
+                        ft.transaction_timestamp,
+                        dtt.transaction_type_code,
+                        ft.channel
+                    FROM warehouse.fact_transactions ft
+                    JOIN warehouse.dim_account da ON ft.account_key = da.account_key
+                    JOIN warehouse.dim_transaction_type dtt ON ft.type_key = dtt.type_key
+                    WHERE ft.source_system = %s AND ft.transaction_id = %s;
+                """, (clean_sys, clean_tid))
+                existing = cur.fetchone()
+
+                if existing is not None:
+                    (
+                        exist_key,
+                        exist_amt,
+                        exist_curr,
+                        exist_stat,
+                        exist_acc_id,
+                        exist_ts,
+                        exist_type,
+                        exist_chan,
+                    ) = existing
+
+                    # Compare complete set of immutable fields in existing fact model
+                    same_amount = (Decimal(str(exist_amt)) == Decimal(str(amt)))
+                    same_curr = (exist_curr.strip() == curr)
+                    same_status = (exist_stat.strip() == stat)
+                    same_acc = (exist_acc_id.strip() == acc_id)
+                    same_ts = (exist_ts == ts)
+                    same_type = (exist_type.strip() == txn_type)
+                    same_chan = (exist_chan.strip() == chan)
+
+                    if same_amount and same_curr and same_status and same_acc and same_ts and same_type and same_chan:
+                        # Identical replay: skip safely
+                        skipped += 1
+                        replay_issues.append((
+                            uuid.uuid4().hex,
+                            batch_id,
+                            "TRANSACTION",
+                            row_id,
+                            row_num,
+                            file_name,
+                            RULE_SOURCE_REPLAY_SKIPPED,
+                            SEVERITY_INFO,
+                            f"Transaction event '{clean_tid}' in system '{clean_sys}' already loaded in warehouse; skipped under idempotency contract.",
+                            DISPOSITION_SKIPPED,
+                        ))
+                    else:
+                        # Conflicting replay: payload mismatch for immutable event!
+                        conflicting += 1
+                        mismatches = []
+                        if not same_amount:
+                            mismatches.append(f"amount ({exist_amt} vs {amt})")
+                        if not same_curr:
+                            mismatches.append(f"currency ({exist_curr.strip()} vs {curr})")
+                        if not same_status:
+                            mismatches.append(f"status ({exist_stat.strip()} vs {stat})")
+                        if not same_acc:
+                            mismatches.append(f"account ({exist_acc_id.strip()} vs {acc_id})")
+                        if not same_ts:
+                            mismatches.append(f"timestamp ({exist_ts} vs {ts})")
+                        if not same_type:
+                            mismatches.append(f"transaction_type ({exist_type.strip()} vs {txn_type})")
+                        if not same_chan:
+                            mismatches.append(f"channel ({exist_chan.strip()} vs {chan})")
+
+                        mismatch_detail = ", ".join(mismatches)
+                        reason_msg = (
+                            f"Conflicting replay: event '{clean_tid}' in system '{clean_sys}' already exists in warehouse "
+                            f"with conflicting payload fields: {mismatch_detail}."
+                        )
+                        replay_issues.append((
+                            uuid.uuid4().hex,
+                            batch_id,
+                            "TRANSACTION",
+                            row_id,
+                            row_num,
+                            file_name,
+                            RULE_CONFLICTING_REPLAY_PAYLOAD,
+                            SEVERITY_ERROR,
+                            reason_msg,
+                            DISPOSITION_REJECTED,
+                        ))
+                        conflicting_quarantines.append((
+                            uuid.uuid4().hex,
+                            batch_id,
+                            "TRANSACTION",
+                            row_id,
+                            row_num,
+                            file_name,
+                            RULE_CONFLICTING_REPLAY_PAYLOAD,
+                            1,
+                        ))
+                else:
+                    raise RuntimeError(
+                        f"Uniqueness conflict detected for event '{clean_tid}' in system '{clean_sys}', "
+                        "but existing warehouse fact record could not be retrieved."
+                    )
 
         # Record replay and conflict issues in monitoring.data_quality_issues
         if replay_issues:
@@ -502,13 +562,5 @@ class WarehouseLoader:
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
             """
             execute_batch(cur, insert_q_sql, conflicting_quarantines)
-
-            # Adjust batch accounting: transfer conflicting rows from valid to rejected
-            cur.execute("""
-                UPDATE monitoring.etl_batch_runs
-                SET records_valid = records_valid - %s,
-                    records_rejected = records_rejected + %s
-                WHERE batch_id = %s;
-            """, (conflicting, conflicting, batch_id))
 
         return inserted, skipped, conflicting
