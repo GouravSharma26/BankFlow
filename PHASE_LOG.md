@@ -517,9 +517,10 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-17
 - Branch: `phase/5-dashboard-api`
-- Commit SHA: 14cb075
-- Pull Request: pending PR into `main`
-- Push status: pending push
+- Commit SHA: 0bf5d32
+- Pull Request: PR #6 (<https://github.com/GouravSharma26/BankFlow/pull/6>)
+- GitHub CI Run (PR #6): <https://github.com/GouravSharma26/BankFlow/actions/runs/39013141697> (SUCCESS, 90 passed, 0 skipped, 0 failed in 7.61s)
+- Push status: Pushed to `origin/phase/5-dashboard-api`, PR #6 opened into `main` (auto-merge deferred)
 - Objective: Extend the verified BankFlow foundation with a secure, tested, read-only reporting REST API (FastAPI) for the existing Lovable web console (`https://bankflow-analytics-console.lovable.app/`).
 - Scope delivered:
   1. **Architecture Decision (TD-020):** Integrated the existing Lovable analytics web console rather than building a redundant Power BI/Metabase dashboard. Recorded intentional deviation in `docs/design_decisions.md` (TD-007, TD-020) and `DEVELOPMENT_CHECKLIST.md`.
