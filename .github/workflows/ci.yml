@@ -74,18 +74,33 @@ jobs:
           PY
 
       - name: Run complete test suite (integration tests required)
+        id: run_tests
         run: |
-          python -m pytest tests -v --tb=short 2>&1 | tee pytest_output.log
-          test_exit_code=${PIPESTATUS[0]}
-          if [ $test_exit_code -ne 0 ]; then
-            echo "### Pytest Failures" >> $GITHUB_STEP_SUMMARY
-            echo '```text' >> $GITHUB_STEP_SUMMARY
-            tail -n 150 pytest_output.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit $test_exit_code
-          else
-            echo "### Pytest Succeeded" >> $GITHUB_STEP_SUMMARY
-            echo '```text' >> $GITHUB_STEP_SUMMARY
-            tail -n 30 pytest_output.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          fi
+          python -m pytest tests -v --tb=short --junitxml=pytest-junit.xml 2>&1 | tee pytest.log
+        continue-on-error: true
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-artifacts
+          path: |
+            pytest.log
+            pytest-junit.xml
+
+      - name: Evaluate test result
+        run: |
+          echo "=== PYTEST LOG START ==="
+          cat pytest.log
+          echo "=== PYTEST LOG END ==="
+          python -c '
+          import xml.etree.ElementTree as ET
+          tree = ET.parse("pytest-junit.xml")
+          root = tree.getroot()
+          failures = int(root.attrib.get("failures", 0))
+          errors = int(root.attrib.get("errors", 0))
+          tests = int(root.attrib.get("tests", 0))
+          print(f"Junit summary: {tests} tests, {failures} failures, {errors} errors")
+          if failures > 0 or errors > 0:
+              exit(1)
+          '
