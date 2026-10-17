@@ -10,6 +10,10 @@ from typing import Optional
 from bankflow.config import DatabaseConfig, get_settings
 
 
+class ApiConfigurationError(ValueError):
+    """Raised when API configuration parameters or credentials are invalid."""
+
+
 @dataclass(frozen=True)
 class ApiConfig:
     """Settings for the FastAPI reporting server."""
@@ -53,24 +57,59 @@ class ApiConfig:
                 "https://bankflow-analytics-console.lovable.app",
             )
 
-        # Dedicated reporting credentials if configured, otherwise standard DB config
-        reporting_user = os.environ.get("BANKFLOW_REPORTING_DB_USER")
-        reporting_password = os.environ.get("BANKFLOW_REPORTING_DB_PASSWORD")
+        # Dedicated reporting credentials resolution
+        # Rules:
+        # 1. If neither variable is configured (or both are blank), preserve fallback to standard DB config.
+        # 2. If both are provided and non-empty, use them together for dedicated reporting role.
+        # 3. If only one is configured, or either value is blank while the other is supplied, raise a clear error.
+        raw_user = os.environ.get("BANKFLOW_REPORTING_DB_USER")
+        raw_password = os.environ.get("BANKFLOW_REPORTING_DB_PASSWORD")
+
+        user_present = raw_user is not None
+        password_present = raw_password is not None
+
+        user_non_empty = bool(raw_user and raw_user.strip())
+        password_non_empty = bool(raw_password and raw_password.strip())
 
         settings = get_settings()
-        db_conf = settings.test_db if use_test_db else settings.db
+        base_db = settings.test_db if use_test_db else settings.db
 
-        user = reporting_user.strip() if reporting_user and reporting_user.strip() else db_conf.user
-        password = reporting_password if reporting_password is not None else db_conf.password
+        if user_present != password_present:
+            if user_present:
+                raise ApiConfigurationError(
+                    "Invalid reporting database configuration: BANKFLOW_REPORTING_DB_USER is configured, "
+                    "but BANKFLOW_REPORTING_DB_PASSWORD is not set. Both reporting credentials must be configured together."
+                )
+            else:
+                raise ApiConfigurationError(
+                    "Invalid reporting database configuration: BANKFLOW_REPORTING_DB_PASSWORD is configured, "
+                    "but BANKFLOW_REPORTING_DB_USER is not set. Both reporting credentials must be configured together."
+                )
 
-        if (reporting_user and reporting_user.strip()) or (reporting_password is not None):
+        if user_non_empty and password_non_empty:
+            # Both provided and non-empty: use them together
             db_conf = DatabaseConfig(
-                host=db_conf.host,
-                port=db_conf.port,
-                name=db_conf.name,
-                user=user,
-                password=password,
+                host=base_db.host,
+                port=base_db.port,
+                name=base_db.name,
+                user=raw_user.strip(),
+                password=raw_password.strip(),
             )
+        elif user_non_empty != password_non_empty:
+            # One is supplied non-empty while the other is blank/whitespace
+            if user_non_empty:
+                raise ApiConfigurationError(
+                    "Invalid reporting database configuration: BANKFLOW_REPORTING_DB_USER is supplied, "
+                    "but BANKFLOW_REPORTING_DB_PASSWORD is blank. Both credentials must be non-empty."
+                )
+            else:
+                raise ApiConfigurationError(
+                    "Invalid reporting database configuration: BANKFLOW_REPORTING_DB_PASSWORD is supplied, "
+                    "but BANKFLOW_REPORTING_DB_USER is blank. Both credentials must be non-empty."
+                )
+        else:
+            # Neither is configured with a non-empty value: fallback to standard database configuration
+            db_conf = base_db
 
         return cls(
             host=resolved_host,

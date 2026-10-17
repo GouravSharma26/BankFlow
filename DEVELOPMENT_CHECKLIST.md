@@ -118,6 +118,16 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Exit criteria:** Zero failures and zero skips across full test suite with mandatory PostgreSQL integration tests; clean `git diff --check`; no credentials or secrets committed; PR opened for review without auto-merging.
 
+## Phase 5.2 — Pre-Phase-6 Credential Configuration Hotfix
+
+**Goal:** Enforce paired reporting-credential configuration, prevent mixed general/reporting credentials, eliminate command-line password exposure in documentation, and verify with automated tests.
+
+- [x] **Enforce Paired Reporting Credentials (`src/bankflow/api/config.py`):** Updated `ApiConfig.from_env` to strictly require both `BANKFLOW_REPORTING_DB_USER` and `BANKFLOW_REPORTING_DB_PASSWORD` together. If neither is set, fallback to standard DB config is preserved. If only one is configured or either is blank while the other is supplied, `ApiConfigurationError` is raised. Never silently mixes general credentials with reporting credentials.
+- [x] **Regression Tests (`tests/test_api_config.py`):** Added isolated regression tests for neither set, both valid, username only, password only, blank username with password, valid username with blank password, both blank fallback, and CLI failure exit code on unpaired credentials.
+- [x] **Documentation & Out-of-Band Security:** Removed all command-line password examples (`-v REPORTING_PW=...`) across `sql/06_reporting_role.sql`, `.env.example`, `HUMAN_SETUP.md`, and `docs/dashboard_api_contract.md`. Documented interactive `\password` and non-echoing secret manager provisioning for automated environments. Fixed PowerShell syntax.
+
+**Exit criteria:** Full test suite passes with zero failures and zero skips under mandatory PostgreSQL integration testing (`BANKFLOW_REQUIRE_INTEGRATION_TESTS=1`); clean `git diff --check`; no credentials or secrets committed; PR opened for review without auto-merging.
+
 ## Phase 6 — Hardening, CI, Documentation, and Portfolio Release
 
 **Goal:** Make the project easy to test, review, reproduce, and explain.

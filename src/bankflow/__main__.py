@@ -445,7 +445,7 @@ def serve_cmd(host: Optional[str], port: Optional[int], reload: bool, test_db: b
     try:
         import uvicorn
         from bankflow.api.app import create_app
-        from bankflow.api.config import ApiConfig
+        from bankflow.api.config import ApiConfig, ApiConfigurationError
     except ImportError:
         click.secho(
             "[ERROR] FastAPI and Uvicorn are required to run the reporting API.\n"
@@ -455,7 +455,12 @@ def serve_cmd(host: Optional[str], port: Optional[int], reload: bool, test_db: b
         )
         sys.exit(1)
 
-    api_config = ApiConfig.from_env(use_test_db=test_db, host=host, port=port)
+    try:
+        api_config = ApiConfig.from_env(use_test_db=test_db, host=host, port=port)
+    except ApiConfigurationError as e:
+        click.secho(f"[ERROR] API Configuration Error: {e}", fg="red")
+        sys.exit(1)
+
     db_config = api_config.db_config
 
     click.secho(f"Starting BankFlow Read-Only Reporting API on http://{api_config.host}:{api_config.port}...", fg="cyan", bold=True)

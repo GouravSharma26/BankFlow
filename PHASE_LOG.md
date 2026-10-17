@@ -4,12 +4,13 @@
 
 ## Current Status
 
-- Overall status: `PHASE 5.1 HOTFIX VERIFIED — API Review Findings & Hardening Implemented`
-- Current phase: `Phase 5.1 Hotfix — API Review Findings & Hardening`
-- Last approved implementation phase: `Phase 5 — Dashboard Integration (Merged into main at 9b91a0a)`
+- Overall status: `PHASE 5.2 HOTFIX VERIFIED — Credential Configuration Hotfix Implemented`
+- Current phase: `Phase 5.2 Hotfix — Pre-Phase-6 Credential Configuration Hotfix`
+- Last approved implementation phase: `Phase 5.1 Hotfix — API Review Findings & Hardening (Merged into main at 56fc761)`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
-- Baseline commit: `9b91a0a` (PR #6 merge commit)
-- Branch: `hotfix/phase-5-api-review-findings`
+- Baseline commit: `56fc761` (PR #7 merge commit)
+- Branch: `hotfix/reporting-credential-config`
+
 
 ## How to Maintain This File
 
@@ -616,7 +617,45 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - Clean diff with zero leaked credentials or unreferenced files.
 - Known limitations:
   - Phase 6 (Hardening, CI, Documentation, and Portfolio Release) remains to be performed.
-- Next action: Submit Phase 5.1 Hotfix PR for review; do not merge automatically.
+- Next action: Submit Phase 5.1 Hotfix PR for review; do not merge automatically. (PR #7 merged into main at 56fc761).
+
+### Phase 5.2 Hotfix — Pre-Phase-6 Credential Configuration Hotfix
+
+- Status: VERIFIED
+- Date: 2026-10-17
+- Branch: `hotfix/reporting-credential-config`
+- Commit SHA: `ed2a58d`
+- Pull Request: Pending PR
+- Objective: Enforce paired reporting credentials, eliminate command-line password arguments in documentation, add isolated regression tests, and verify complete test suite before Phase 6.
+- Scope delivered:
+  1. **Enforce Paired Reporting Credentials (`src/bankflow/api/config.py`):**
+     - Introduced `ApiConfigurationError(ValueError)`.
+     - Enforced strict pairing: both `BANKFLOW_REPORTING_DB_USER` and `BANKFLOW_REPORTING_DB_PASSWORD` must be provided and non-empty together.
+     - Preserved safe local-development fallback: if neither variable is set (or both are blank), defaults to standard database configuration.
+     - Unpaired configuration (username only, password only, or one blank while the other is supplied) raises a clear `ApiConfigurationError`. Never silently combines general credentials with reporting credentials.
+  2. **CLI Error Handling (`src/bankflow/__main__.py`):**
+     - Updated `serve_cmd` to cleanly catch `ApiConfigurationError` and display error messages with exit code 1.
+  3. **Regression Tests (`tests/test_api_config.py`):**
+     - Added 18 isolated tests using autouse environment cleanup.
+     - Covered neither variable set, both valid credentials set, username only, password only, blank username with password, valid username with blank password, both blank fallback, and CLI failure exit code.
+  4. **Documentation & Out-of-Band Credential Security:**
+     - Updated `sql/06_reporting_role.sql`, `.env.example`, `HUMAN_SETUP.md`, and `docs/dashboard_api_contract.md`.
+     - Removed all automation examples exposing passwords in command-line arguments (`-v REPORTING_PW=...`).
+     - Kept interactive `\password bankflow_reporting_user` as recommended local setup.
+     - Documented non-echoing secret manager provisioning (AWS Secrets Manager, GCP Secret Manager, Vault) for automated environments.
+     - Corrected PowerShell `$env:VARIABLE = "value"` syntax in setup examples.
+- Tests/commands executed:
+  - `python -m pytest tests/test_api_config.py -v` (18 passed in 0.68s)
+  - Full suite: `powershell -Command "$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS='1'; python -m pytest tests -v"` (155 passed, 0 skipped, 0 failed)
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes: 155 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - Paired credentials enforced; unpaired or mixed credentials rejected with explicit `ApiConfigurationError`.
+  - Zero password exposure in CLI examples across all documentation and SQL scripts.
+  - 18 isolated API config unit tests pass. Full test suite passes with zero failures and zero skips under mandatory PostgreSQL integration testing.
+- Known limitations:
+  - Phase 6 (Hardening, CI, Documentation, and Portfolio Release) remains to be performed.
+- Next action: Submit Phase 5.2 Hotfix PR for review; do not merge automatically.
 
 
 ## Phase Entry Template
