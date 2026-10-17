@@ -469,6 +469,50 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Known limitations: BI dashboard (Power BI/Metabase) and cloud scheduling/managed deployment are deferred for post-resume roadmap phases.
 - Next action: Repository release is complete and verified on `main`. Proceed to subsequent roadmap phases only upon explicit user request.
 
+### Phase 4 — SQL Analytics and Metric Definitions
+
+- Status: VERIFIED
+- Date: 2026-10-17
+- Branch: phase/4-sql-analytics-metrics
+- Commit SHA: pending initial commit
+- GitHub URL: pending PR creation
+- Push status: In progress (pushing branch and opening review PR to main)
+- Objective: Implement comprehensive SQL analytics, conformed analytical reporting views, precise metric definitions contract, CLI reporting commands, and PostgreSQL integration tests for BankFlow Phase 4.
+- Changes delivered:
+  1. `sql/05_reporting_views.sql`: Created conformed views in dedicated `reporting` schema:
+     - `v_daily_transaction_summary`: Daily volume, gross event value, and completed/failed counts by UTC date and currency.
+     - `v_deposit_withdrawal_analysis`: Completed cash-flow activity comparing deposits vs withdrawals with explicit completed-status filtering.
+     - `v_branch_channel_activity`: Channel and branch distribution of transaction events and completed volume.
+     - `v_transaction_type_mix`: Portfolio breakdown across standard transaction types, event share, and value share.
+     - `v_data_quality_summary`: Multi-issue accounting distinguishing distinct quality defects, affected source rows, and impacted batches.
+     - `v_pipeline_execution_health`: Batch execution status, lifecycle duration (seconds), validation efficiency, and reconciliation outcomes.
+     - `v_quarantine_inventory`: Quarantined record inventory grouped by entity, primary rule code, and batch.
+  2. `sql/04_analytics_queries.sql`: Updated with 7 executable reporting queries matching the canonical reporting areas.
+  3. `src/bankflow/analytics/`: Added `schema.py` with idempotent `init_reporting_schema(conn)`.
+  4. `src/bankflow/__main__.py`: Updated `init-db` to initialize reporting schema; added `bankflow report <report_name>` CLI command with formatting and filters (`--currency`, `--status`, `--entity`, `--batch-id`, `--limit`).
+  5. `tests/test_analytics_integration.py`: Added 11 PostgreSQL integration tests verifying all 7 reporting views against deterministic known-answer fixtures, empty-state behavior, `sql/04_analytics_queries.sql` execution, CLI report command formatting, and `EXPLAIN` query plan index scans.
+  6. `tests/test_warehouse_integration.py`: Updated `postgres_test_db` fixture to initialize the reporting schema.
+  7. `docs/metric_definitions.md`: Fully updated from planned draft to verified contract with comprehensive formulas, grains, dimensions, status handling, reversal semantics, and empty/zero-division behavior.
+  8. `docs/data_dictionary.md`: Added Section 6 covering all 7 reporting views with column definitions, types, nullability, derivations, and meanings.
+  9. `docs/architecture.md`: Updated Section 3.7 with reporting layer architecture, conformed analytical views, and metric rules.
+  10. `docs/design_decisions.md`: Accepted TD-014 (Grouped currencies only) and added TD-019 (Dedicated `reporting` schema with conformed analytical views).
+  11. `DEVELOPMENT_CHECKLIST.md`: Reconciled Phase 3 truthfully as merged to main with CI passing, and checked off Phase 4 items with verified exit criteria.
+  12. `README.md`: Documented `bankflow report` CLI command, conformed reporting views, and reporting rules.
+- Tests/commands executed:
+  - `python -m pytest tests/test_analytics_integration.py -v` (11 passed in 123.98s)
+  - Full suite: `powershell -Command "$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS='1'; python -m pytest tests -v"` (78 passed, 0 skipped, 0 failed in 390.65s)
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes: 78 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - All 7 reporting views executed successfully against deterministic known-answer datasets loaded in PostgreSQL.
+  - Known-answer assertions verified: daily counts, gross amounts, completed deposit/withdrawal ratios, branch/channel volumes, type mix, multi-issue vs affected-row accounting, batch duration and reconciliation statuses, and quarantine summaries.
+  - Query plans verified via `EXPLAIN` demonstrating index usage (`dim_date_pkey`, `dim_transaction_type_pkey`, `dim_branch_pkey`).
+  - Zero-division and empty dataset tests confirmed queries produce empty or 0 results without exceptions.
+- Review findings: None in tested scope.
+- Fixes or accepted risks: Staging raw currency column constraint is `VARCHAR(10)`, test fixtures use ISO-like codes (`XXX`). `quarantined_records` timestamp is `quarantined_at`.
+- Known limitations: Hosted Lovable prototype is a synthetic frontend mockup not connected to PostgreSQL. BI dashboard (Power BI/Metabase) is planned for Phase 5.
+- Next action: Submit Phase 4 PR for user review; do not start Phase 5.
+
 ## Phase Entry Template
 
 ```markdown

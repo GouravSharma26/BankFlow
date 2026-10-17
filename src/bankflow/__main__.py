@@ -11,6 +11,7 @@ from typing import Optional
 
 import click
 
+from bankflow.analytics.schema import init_reporting_schema
 from bankflow.config import get_settings
 from bankflow.db import check_connection, get_connection
 from bankflow.generator.defects import DefectConfig
@@ -51,7 +52,7 @@ def test_conn_cmd(test_db: bool):
 @cli.command("init-db")
 @click.option("--test-db", is_flag=True, help="Initialize the dedicated test database instead of primary.")
 def init_db_cmd(test_db: bool):
-    """Initialize PostgreSQL staging, monitoring, and quarantine schemas and tables."""
+    """Initialize PostgreSQL staging, monitoring, quarantine, warehouse, and reporting schemas."""
     settings = get_settings()
     db_config = settings.test_db if test_db else settings.db
     target_type = "test" if test_db else "primary"
@@ -62,7 +63,8 @@ def init_db_cmd(test_db: bool):
             init_staging_schema(conn)
             init_validation_schema(conn)
             init_warehouse_schema(conn)
-        click.secho(f"[OK] Successfully initialized staging, monitoring, quarantine, and warehouse schemas in '{db_config.name}'.", fg="green")
+            init_reporting_schema(conn)
+        click.secho(f"[OK] Successfully initialized staging, monitoring, quarantine, warehouse, and reporting schemas in '{db_config.name}'.", fg="green")
     except Exception as ex:
         click.secho(f"[ERROR] Database initialization failed: {ex}", fg="red")
         sys.exit(1)
@@ -367,6 +369,67 @@ def batch_status_cmd(batch_id: str, test_db: bool):
 
     except Exception as ex:
         click.secho(f"[ERROR] Query failed: {ex}", fg="red")
+        sys.exit(1)
+
+
+@cli.command("report")
+@click.argument("name", type=click.Choice([
+    "daily",
+    "deposit-withdrawal",
+    "branch-channel",
+    "type-mix",
+    "quality",
+    "batches",
+    "quarantine"
+], case_sensitive=False))
+@click.option("--currency", "-c", default=None, help="Filter results by ISO currency (e.g. USD, EUR).")
+@click.option("--limit", "-n", default=25, show_default=True, type=int, help="Maximum number of rows to return.")
+@click.option("--test-db", is_flag=True, help="Query the dedicated test database instead of primary.")
+def report_cmd(name: str, currency: Optional[str], limit: int, test_db: bool):
+    """Query verified reporting views for analytics and operational summaries."""
+    settings = get_settings()
+    db_config = settings.test_db if test_db else settings.db
+
+    view_map = {
+        "daily": ("reporting.v_daily_transaction_summary", "reporting_date DESC, currency", True),
+        "deposit-withdrawal": ("reporting.v_deposit_withdrawal_analysis", "reporting_date DESC, currency", True),
+        "branch-channel": ("reporting.v_branch_channel_activity", "total_transaction_count DESC, region, branch_name, channel, currency", True),
+        "type-mix": ("reporting.v_transaction_type_mix", "total_transaction_count DESC, transaction_type_code, currency", True),
+        "quality": ("reporting.v_data_quality_summary", "issue_count DESC, rule_code", False),
+        "batches": ("reporting.v_pipeline_execution_health", "started_at DESC NULLS LAST", False),
+        "quarantine": ("reporting.v_quarantine_inventory", "quarantined_rows DESC, batch_id, entity_type", False),
+    }
+
+    view_name, default_order, has_currency = view_map[name.lower()]
+
+    where_clause = ""
+    params = []
+    if currency and has_currency:
+        where_clause = "WHERE currency = %s"
+        params.append(currency.upper().strip())
+
+    query = f"SELECT * FROM {view_name} {where_clause} ORDER BY {default_order} LIMIT %s;"
+    params.append(limit)
+
+    try:
+        with get_connection(db_config) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, tuple(params))
+                rows = cur.fetchall()
+                col_names = [desc[0] for desc in cur.description]
+
+                if not rows:
+                    click.secho(f"No records found in {view_name}.", fg="yellow")
+                    return
+
+                click.secho(f"=== Report: {name.upper()} ({len(rows)} rows from {view_name}) ===", fg="cyan", bold=True)
+                header = " | ".join(f"{col}" for col in col_names)
+                click.secho(header, bold=True)
+                click.echo("-" * max(len(header), 60))
+                for row in rows:
+                    click.echo(" | ".join(str(val) if val is not None else "" for val in row))
+    except Exception as ex:
+        click.secho(f"[ERROR] Report generation failed: {ex}", fg="red")
         sys.exit(1)
 
 

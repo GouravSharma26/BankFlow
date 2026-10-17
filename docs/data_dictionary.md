@@ -307,6 +307,145 @@ Purpose/grain: one accepted transaction event under the defined source event ide
 | `source_row_id` | `BIGINT` | No | None | `staging.stg_transactions.source_row_id` | Lineage to exact staging row |
 | `loaded_at` | `TIMESTAMPTZ` | Yes | Default CURRENT_TIMESTAMP | Database default | Warehouse load timestamp |
 
-## 6. Change Control
+## 6. Implemented Reporting Views (Phase 4)
+
+### 6.1 `reporting.v_daily_transaction_summary`
+- **Schema / View:** `reporting.v_daily_transaction_summary`
+- **Purpose / Grain:** Aggregated transaction metrics per calendar reporting date and currency. Grain: (`reporting_date`, `currency`).
+- **Underlying Tables:** `warehouse.fact_transactions`, `warehouse.dim_date`.
+
+| Column | PostgreSQL type | Nullable? | Source / derivation | Meaning |
+|---|---|---|---|---|
+| `date_key` | `INT` | No | `dim_date.date_key` | Calendar date key (YYYYMMDD) |
+| `reporting_date` | `DATE` | No | `dim_date.full_date` | Calendar date in UTC |
+| `year_number` | `INT` | No | `dim_date.year_number` | Calendar year |
+| `month_number` | `INT` | No | `dim_date.month_number` | Calendar month number (1-12) |
+| `month_name` | `VARCHAR(16)` | No | `dim_date.month_name` | Full month name |
+| `day_name` | `VARCHAR(16)` | No | `dim_date.day_name` | Day of week name |
+| `is_weekend` | `BOOLEAN` | No | `dim_date.is_weekend` | True if Saturday or Sunday |
+| `currency` | `VARCHAR(10)` | No | `fact_transactions.currency` | ISO currency code |
+| `total_transaction_count` | `BIGINT` | No | `COUNT(*)` | Total transaction event count |
+| `completed_transaction_count` | `BIGINT` | No | `COUNT(*) FILTER (WHERE status = 'COMPLETED')` | Settled transaction event count |
+| `pending_transaction_count` | `BIGINT` | No | `COUNT(*) FILTER (WHERE status = 'PENDING')` | Pending transaction count |
+| `failed_transaction_count` | `BIGINT` | No | `COUNT(*) FILTER (WHERE status = 'FAILED')` | Failed transaction count |
+| `reversed_transaction_count` | `BIGINT` | No | `COUNT(*) FILTER (WHERE status = 'REVERSED')` | Reversed transaction count |
+| `active_accounts` | `BIGINT` | No | `COUNT(DISTINCT account_key)` | Unique transacting accounts |
+| `active_customers` | `BIGINT` | No | `COUNT(DISTINCT customer_key)` | Unique transacting customers |
+| `gross_transaction_amount` | `NUMERIC(18, 2)` | No | `SUM(amount)` | Gross monetary volume |
+| `completed_gross_amount` | `NUMERIC(18, 2)` | No | `COALESCE(SUM(amount) FILTER (...), 0.00)` | Completed gross monetary volume |
+
+### 6.2 `reporting.v_deposit_withdrawal_analysis`
+- **Schema / View:** `reporting.v_deposit_withdrawal_analysis`
+- **Purpose / Grain:** Deposit and withdrawal volume and value comparison per date and currency. Grain: (`reporting_date`, `currency`).
+- **Underlying Tables:** `warehouse.fact_transactions`, `warehouse.dim_date`, `warehouse.dim_transaction_type`.
+
+| Column | PostgreSQL type | Nullable? | Source / derivation | Meaning |
+|---|---|---|---|---|
+| `date_key` | `INT` | No | `dim_date.date_key` | Calendar date key |
+| `reporting_date` | `DATE` | No | `dim_date.full_date` | Calendar date in UTC |
+| `currency` | `VARCHAR(10)` | No | `fact_transactions.currency` | ISO currency code |
+| `deposit_count` | `BIGINT` | No | `COUNT(*) FILTER (type = 'DEPOSIT')` | Total deposit count |
+| `deposit_gross_amount` | `NUMERIC(18, 2)` | No | `SUM(amount) FILTER (type = 'DEPOSIT')` | Total deposit gross amount |
+| `completed_deposit_count` | `BIGINT` | No | `COUNT(*) FILTER (type = 'DEPOSIT' AND COMPLETED)` | Completed deposit count |
+| `completed_deposit_gross_amount` | `NUMERIC(18, 2)` | No | `SUM(amount) FILTER (type = 'DEPOSIT' AND COMPLETED)` | Completed deposit gross amount |
+| `withdrawal_count` | `BIGINT` | No | `COUNT(*) FILTER (type = 'WITHDRAWAL')` | Total withdrawal count |
+| `withdrawal_gross_amount` | `NUMERIC(18, 2)` | No | `SUM(amount) FILTER (type = 'WITHDRAWAL')` | Total withdrawal gross amount |
+| `completed_withdrawal_count` | `BIGINT` | No | `COUNT(*) FILTER (type = 'WITHDRAWAL' AND COMPLETED)` | Completed withdrawal count |
+| `completed_withdrawal_gross_amount` | `NUMERIC(18, 2)` | No | `SUM(amount) FILTER (type = 'WITHDRAWAL' AND COMPLETED)` | Completed withdrawal gross amount |
+| `reversal_count` | `BIGINT` | No | `COUNT(*) FILTER (type = 'REVERSAL')` | Reversal event count |
+| `reversal_gross_amount` | `NUMERIC(18, 2)` | No | `SUM(amount) FILTER (type = 'REVERSAL')` | Reversal gross amount |
+
+### 6.3 `reporting.v_branch_channel_activity`
+- **Schema / View:** `reporting.v_branch_channel_activity`
+- **Purpose / Grain:** Activity grouped by operational branch, region, initiation channel, and currency. Grain: (`region`, `branch_id`, `channel`, `currency`).
+- **Underlying Tables:** `warehouse.fact_transactions`, `warehouse.dim_branch`.
+
+| Column | PostgreSQL type | Nullable? | Source / derivation | Meaning |
+|---|---|---|---|---|
+| `region` | `VARCHAR(64)` | No | `dim_branch.region` | Branch geographical region |
+| `branch_id` | `VARCHAR(64)` | No | `dim_branch.branch_id` | Branch business identifier |
+| `branch_name` | `VARCHAR(128)` | No | `dim_branch.branch_name` | Branch facility name |
+| `channel` | `VARCHAR(32)` | No | `fact_transactions.channel` | Initiation channel |
+| `currency` | `VARCHAR(10)` | No | `fact_transactions.currency` | ISO currency code |
+| `total_transaction_count` | `BIGINT` | No | `COUNT(*)` | Total transaction count |
+| `completed_transaction_count` | `BIGINT` | No | `COUNT(*) FILTER (COMPLETED)` | Completed transaction count |
+| `distinct_accounts` | `BIGINT` | No | `COUNT(DISTINCT account_key)` | Unique transacting accounts |
+| `distinct_customers` | `BIGINT` | No | `COUNT(DISTINCT customer_key)` | Unique transacting customers |
+| `gross_transaction_amount` | `NUMERIC(18, 2)` | No | `SUM(amount)` | Total gross transaction amount |
+| `completed_gross_amount` | `NUMERIC(18, 2)` | No | `SUM(amount) FILTER (COMPLETED)` | Completed gross transaction amount |
+
+### 6.4 `reporting.v_transaction_type_mix`
+- **Schema / View:** `reporting.v_transaction_type_mix`
+- **Purpose / Grain:** Breakdown by transaction type code, category, and currency. Grain: (`transaction_type_code`, `currency`).
+- **Underlying Tables:** `warehouse.fact_transactions`, `warehouse.dim_transaction_type`.
+
+| Column | PostgreSQL type | Nullable? | Source / derivation | Meaning |
+|---|---|---|---|---|
+| `transaction_type_code` | `VARCHAR(32)` | No | `dim_transaction_type.transaction_type_code` | Type business code |
+| `transaction_type_name` | `VARCHAR(64)` | No | `dim_transaction_type.transaction_type_name` | Type display label |
+| `transaction_family` | `VARCHAR(32)` | No | `dim_transaction_type.transaction_family` | Family (CREDIT, DEBIT, TRANSFER, ADJUSTMENT) |
+| `currency` | `VARCHAR(10)` | No | `fact_transactions.currency` | ISO currency code |
+| `total_transaction_count` | `BIGINT` | No | `COUNT(*)` | Total transaction count |
+| `completed_transaction_count` | `BIGINT` | No | `COUNT(*) FILTER (COMPLETED)` | Completed transaction count |
+| `failed_transaction_count` | `BIGINT` | No | `COUNT(*) FILTER (FAILED)` | Failed transaction count |
+| `pending_transaction_count` | `BIGINT` | No | `COUNT(*) FILTER (PENDING)` | Pending transaction count |
+| `reversed_transaction_count` | `BIGINT` | No | `COUNT(*) FILTER (REVERSED)` | Reversed transaction count |
+| `gross_transaction_amount` | `NUMERIC(18, 2)` | No | `SUM(amount)` | Gross transaction amount |
+| `completed_gross_amount` | `NUMERIC(18, 2)` | No | `SUM(amount) FILTER (COMPLETED)` | Completed gross transaction amount |
+
+### 6.5 `reporting.v_data_quality_summary`
+- **Schema / View:** `reporting.v_data_quality_summary`
+- **Purpose / Grain:** Data-quality violations summarized by rule code, severity, and disposition. Grain: (`rule_code`, `severity`, `disposition`).
+- **Underlying Tables:** `monitoring.data_quality_issues`.
+
+| Column | PostgreSQL type | Nullable? | Source / derivation | Meaning |
+|---|---|---|---|---|
+| `rule_code` | `VARCHAR(64)` | No | `data_quality_issues.rule_code` | Violated contract rule code |
+| `severity` | `VARCHAR(16)` | No | `data_quality_issues.severity` | ERROR, WARNING, INFO |
+| `disposition` | `VARCHAR(32)` | No | `data_quality_issues.disposition` | REJECTED, ACCEPTED, SKIPPED |
+| `issue_count` | `BIGINT` | No | `COUNT(*)` | Total issue instances recorded |
+| `affected_source_rows` | `BIGINT` | No | `COUNT(DISTINCT source_row_id)` | Unique source rows affected |
+| `affected_batches` | `BIGINT` | No | `COUNT(DISTINCT batch_id)` | Unique ETL batches affected |
+
+### 6.6 `reporting.v_pipeline_execution_health`
+- **Schema / View:** `reporting.v_pipeline_execution_health`
+- **Purpose / Grain:** Operational health, row accounting, duration, and reconciliation status per batch. Grain: (`batch_id`).
+- **Underlying Tables:** `monitoring.etl_batch_runs`.
+
+| Column | PostgreSQL type | Nullable? | Source / derivation | Meaning |
+|---|---|---|---|---|
+| `batch_id` | `VARCHAR(64)` | No | `etl_batch_runs.batch_id` | Unique batch identifier |
+| `source_name` | `VARCHAR(255)` | No | `etl_batch_runs.source_name` | Input dataset path / identifier |
+| `started_at` | `TIMESTAMPTZ` | No | `etl_batch_runs.started_at` | Ingestion start timestamp |
+| `completed_at` | `TIMESTAMPTZ` | Yes | `etl_batch_runs.completed_at` | Ingestion completion timestamp |
+| `duration_seconds` | `NUMERIC` | Yes | `EXTRACT(EPOCH FROM (completed - started))` | Execution time in seconds |
+| `status` | `VARCHAR(32)` | No | `etl_batch_runs.status` | Batch lifecycle status |
+| `records_extracted` | `INT` | Yes | `etl_batch_runs.records_extracted` | Source CSV rows discovered |
+| `records_staged` | `INT` | Yes | `etl_batch_runs.records_staged` | Staged rows inserted |
+| `records_valid` | `INT` | Yes | `etl_batch_runs.records_valid` | Staged rows passing validation |
+| `records_rejected` | `INT` | Yes | `etl_batch_runs.records_rejected` | Staged rows quarantined |
+| `records_inserted` | `INT` | Yes | `etl_batch_runs.records_inserted` | New facts loaded |
+| `records_updated` | `INT` | Yes | `etl_batch_runs.records_updated` | Updated facts |
+| `records_skipped` | `INT` | Yes | `etl_batch_runs.records_skipped` | Replay duplicates skipped |
+| `rejection_rate_pct` | `NUMERIC(5, 2)` | No | `ROUND(rejected / staged * 100, 2)` | Percentage of staged rows quarantined |
+| `reconciliation_status` | `VARCHAR(32)` | Yes | `etl_batch_runs.reconciliation_status` | RECONCILED / UNRECONCILED |
+| `error_summary` | `TEXT` | Yes | `etl_batch_runs.error_summary` | Failure explanation if any |
+
+### 6.7 `reporting.v_quarantine_inventory`
+- **Schema / View:** `reporting.v_quarantine_inventory`
+- **Purpose / Grain:** Quarantined records inventory by batch, entity type, and primary rule code. Grain: (`batch_id`, `entity_type`, `primary_rule_code`).
+- **Underlying Tables:** `quarantine.quarantined_records`.
+
+| Column | PostgreSQL type | Nullable? | Source / derivation | Meaning |
+|---|---|---|---|---|
+| `batch_id` | `VARCHAR(64)` | No | `quarantined_records.batch_id` | Lineage batch identifier |
+| `entity_type` | `VARCHAR(32)` | No | `quarantined_records.entity_type` | BRANCH, CUSTOMER, ACCOUNT, TRANSACTION |
+| `primary_rule_code` | `VARCHAR(64)` | No | `quarantined_records.primary_rule_code` | Primary rejection rule code |
+| `quarantined_rows` | `BIGINT` | No | `COUNT(*)` | Number of quarantined rows |
+| `recorded_issue_count` | `BIGINT` | No | `SUM(issue_count)` | Sum of quality issues on quarantined rows |
+| `first_quarantined_at` | `TIMESTAMPTZ` | Yes | `MIN(quarantined_at)` | Earliest quarantine timestamp |
+| `last_quarantined_at` | `TIMESTAMPTZ` | Yes | `MAX(quarantined_at)` | Latest quarantine timestamp |
+
+## 7. Change Control
 
 Every schema change should update the SQL initialization/migration, data-access code, tests, and this dictionary. A phase is not complete if the database schema and dictionary disagree.

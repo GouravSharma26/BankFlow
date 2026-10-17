@@ -83,7 +83,8 @@ Run `python -m bankflow --help` for the installed command list.
 | `reconcile BATCH_ID` | Audit counts and monetary totals |
 | `run` | Run staging, validation, loading, and reconciliation in one command |
 | `batch-status BATCH_ID` | Inspect batch metrics and data-quality issue counts |
-| `init-db` | Initialize staging, monitoring, quarantine, and warehouse schemas |
+| `report REPORT_NAME` | Query conformed reporting views (`daily`, `deposit-withdrawal`, `branch-channel`, `type-mix`, `quality`, `batches`, `quarantine`) |
+| `init-db` | Initialize staging, monitoring, quarantine, warehouse, and reporting schemas |
 | `test-connection` | Verify database connectivity without logging credentials |
 
 Use `--test-db` on commands that support it to target the dedicated test database instead of the primary local database.
@@ -98,15 +99,32 @@ python -m pytest tests -v
 
 The integration tests must use the dedicated test database. Destructive test setup is guarded against non-test database names. CI is configured to require integration tests, so a missing test database should fail the workflow instead of silently skipping integration coverage.
 
-## Analytics SQL
+## Analytics SQL & Reporting Views
 
-After initializing the schemas and loading at least one batch, run the reporting pack from the repository root with a local `psql` client. Adjust the connection string for your `.env`:
+BankFlow provides a conformed reporting layer in the dedicated `reporting` PostgreSQL schema (`sql/05_reporting_views.sql`) along with canonical executable SQL queries (`sql/04_analytics_queries.sql`).
+
+You can inspect analytical reports using the CLI:
+
+```powershell
+python -m bankflow report daily --limit 10
+python -m bankflow report deposit-withdrawal
+python -m bankflow report branch-channel
+python -m bankflow report type-mix
+python -m bankflow report quality
+python -m bankflow report batches
+python -m bankflow report quarantine
+```
+
+To run the raw SQL reporting queries from the repository root with a local `psql` client:
 
 ```powershell
 psql "postgresql://postgres:postgres@localhost:5432/bankflow" -v ON_ERROR_STOP=1 -f sql/04_analytics_queries.sql
 ```
 
-The queries report gross amounts grouped by currency. Do not add different currencies together without an explicit FX-conversion policy, and do not interpret gross totals as signed net cash flow.
+**Reporting Rules & Guardrails:**
+- All reports group strictly by currency. Do not add different currencies together without an explicit FX-conversion policy.
+- All transaction values represent gross positive event amounts; do not interpret gross event sums as net cash flow or account balances.
+- Completed metrics filter strictly on `COMPLETED` transaction status. Reversals are tracked as discrete transaction events rather than destructive modifications.
 
 ## Architecture
 

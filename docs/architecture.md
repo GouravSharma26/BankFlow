@@ -1,6 +1,6 @@
 # BankFlow — Architecture
 
-> Status: planned architecture. Update this document when implementation establishes or changes concrete interfaces. Do not treat planned components as already implemented.
+> Status: Current through Phase 4 (SQL Analytics and Reporting Layer implemented and verified). The operational batch ETL, dimensional warehouse, monitoring/quarantine, and conformed analytical reporting schema are active.
 
 ## 1. Design Goals
 
@@ -92,19 +92,33 @@ Use a dimensional design with a central transaction fact and descriptive dimensi
 
 ### 3.7 Reporting
 
-Reporting SQL or views should be the authoritative definition of dashboard metrics. Group or filter by currency unless an explicit FX conversion model is implemented. Clearly define status semantics and whether the metric counts events, value of events, or account balances.
+The reporting layer resides in the dedicated `reporting` PostgreSQL schema and provides conformed analytical views built directly over the star schema warehouse, monitoring, and quarantine tables. These views establish the single authoritative source of truth for downstream reports, CLI utilities, and future business intelligence tools (Power BI/Metabase).
 
-## 4. Planned Data Schemas
+Implemented views:
+- `reporting.v_daily_transaction_summary`: Daily volume, gross event value, and completed/failed counts by UTC date and currency.
+- `reporting.v_deposit_withdrawal_analysis`: Completed cash-flow activity comparing deposits vs withdrawals with explicit completed-status filtering.
+- `reporting.v_branch_channel_activity`: Channel and branch distribution of transaction events and completed volume.
+- `reporting.v_transaction_type_mix`: Portfolio breakdown across standard transaction types, event share, and value share.
+- `reporting.v_data_quality_summary`: Multi-issue accounting distinguishing distinct quality defects, affected source rows, and impacted batches.
+- `reporting.v_pipeline_execution_health`: Batch execution status, lifecycle duration (seconds), validation efficiency, and reconciliation outcomes.
+- `reporting.v_quarantine_inventory`: Quarantined record inventory grouped by entity, primary rule code, and batch.
 
-Prefer PostgreSQL schemas such as:
+Key reporting architectural rules:
+- **Currency Isolation**: All monetary amounts are strictly aggregated per currency; no cross-currency summation or synthetic FX conversion is permitted.
+- **Gross Event Amounts**: The fact table represents discrete transaction events, not running account balances. All transaction amounts are positive gross values.
+- **UTC Date Standardization**: Reporting dates are derived directly from the immutable warehouse date dimension key (`dim_date.calendar_date`), preventing session timezone drift.
+- **Status & Reversal Explicitness**: Completed-event metrics filter strictly on `COMPLETED` status; reversals (`REVERSAL` transaction type or `REVERSED` status) are never naively subtracted as negative facts without explicit reporting models.
+- **Zero-Mutation Guarantee**: Analytical queries and reporting views are strictly read-only and have zero side-effects on staging or warehouse data.
 
-- `staging` — raw values and source lineage.
-- `monitoring` — ETL batch runs and data quality issues.
+## 4. Implemented Data Schemas
+
+The database uses dedicated PostgreSQL schemas to enforce separation of concerns:
+
+- `staging` — raw values, file headers, and row-level lineage.
+- `monitoring` — ETL batch runs, execution metrics, reconciliation results, and data quality issues.
 - `quarantine` — quarantined records and relational views linking back to raw staging without data duplication.
-- `warehouse` — dimensions and fact table.
-- `reporting` — views intended for analytics/dashboard usage.
-
-These are logical boundaries. They can be created as separate PostgreSQL schemas or adapted to consistent table prefixes if the implementation has a justified reason. Document deviations before adding them.
+- `warehouse` — dimensional star schema (conformed dimensions and fact transactions).
+- `reporting` — conformed analytical views providing the authoritative metric layer for reports and dashboards.
 
 ## 5. Batch Lifecycle
 
