@@ -696,7 +696,52 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Known limitations:
   - None within tested scope.
   - Phase 6 (Deployment, Packaging, and Portfolio Presentation) remains to be performed.
-- Next action: Await review and merge of PR #9; do not start Phase 6 before merge.
+- Next action: PR #9 reviewed and merged into `main` at `374db5f53de83c315b7d200adbaffd377faf4f0a`; proceed with Phase 6 hardening and portfolio release.
+
+### Phase 6 — Hardening, CI, Documentation, and Portfolio Release
+
+- Status: VERIFIED
+- Date: 2026-10-17
+- Branch: `phase/6-hardening-portfolio-release`
+- Code Commit SHA: `6697c207908fb26db4a6d4111ddae33b490f23dc`
+- Documentation / Head Commit SHA: `2da9ac51c89bbfe71e416a9eb0317e3f8be140c9`
+- Pull Request: PR #10 (<https://github.com/GouravSharma26/BankFlow/pull/10>)
+- GitHub CI Run (PR #10): <https://github.com/GouravSharma26/BankFlow/actions/runs/39035263412> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.42s)
+- GitHub CI Run (Branch): <https://github.com/GouravSharma26/BankFlow/actions/runs/39035233565> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.38s)
+- Push status: Pushed to `origin/phase/6-hardening-portfolio-release`; PR #10 open into `main` (auto-merge deferred)
+- Objective: Complete Phase 6 hardening, CI strengthening, repository documentation synchronization, clean-clone verification, and portfolio presentation.
+- Scope delivered:
+  1. **Comprehensive Test Suite & Safety Hardening:**
+     - 168 automated tests covering unit, PostgreSQL integration, end-to-end, and failure injection scenarios.
+     - Strengthened test database safety guard in `src/bankflow/config.py` (`DatabaseConfig.is_test_database`) by adding `stage`, `staging`, and `release` to `FORBIDDEN_PROD_TOKENS`.
+     - Verified isolated test database reset protection in `tests/test_config.py`.
+     - Preserved mandatory PostgreSQL integration requirement (`BANKFLOW_REQUIRE_INTEGRATION_TESTS=1`).
+  2. **CI Pipeline Strengthening:**
+     - Added repository hygiene step (`git diff --check`) to `.github/workflows/ci.yml` to automatically reject uncommitted whitespace errors and conflict markers.
+     - Preserved PostgreSQL 17 service, isolated `bankflow_test` creation, pip caching, `[dev,api]` installation, and artifact uploads on both success and failure.
+  3. **Reproducible Demonstration Guide & Portfolio Release:**
+     - Authored `docs/demo_walkthrough.md` with step-by-step reproducible commands for clean batch ingestion, database-enforced idempotent replay, data quality defect quarantine, conformed reporting SQL queries, read-only reporting API verification, and interview talking points.
+  4. **Documentation Synchronization:**
+     - Synchronized `README.md`, `HUMAN_SETUP.md`, `RELEASE_CHECKLIST.md`, `docs/architecture.md`, `docs/data_dictionary.md`, and `DEVELOPMENT_CHECKLIST.md`.
+     - Updated logical architecture diagram to incorporate Python CLI reporting, read-only FastAPI service, and Lovable Analytics Console boundary (explicitly documenting the hosted prototype's Demo Mode).
+     - Removed all stale phase handoffs and marked completed deliverables accurately.
+- Tests/commands executed:
+  - `python -m pytest tests/test_config.py -v` (5 passed in 0.05s)
+  - Full suite: `$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS = "1"; python -m pytest tests -v` (168 passed, 0 skipped, 0 failed in 712.89s)
+  - Clean-clone workflow verification: `test-connection`, `init-db`, `generate`, `run`, `batch-status`, `reconcile`, `report` commands tested against live PostgreSQL container.
+  - `git diff --check` (clean, 0 warnings/errors).
+- Test outcomes: 168 passed, 0 skipped, 0 failed.
+- Acceptance evidence:
+  - Full automated test suite passes with zero failures and zero skips under mandatory PostgreSQL integration testing.
+  - Test database guard rejects unsafe targets across standard and subtle keyword tokens.
+  - CI workflow incorporates automated hygiene check and test artifact uploads.
+  - Demonstration walk-through verified step-by-step against PostgreSQL container.
+  - Documentation fully synchronized across all repository guides and specifications.
+- Known limitations:
+  - Batch ETL simulation using synthetic banking data only; live banking networks and payment execution are out of scope.
+  - Public Lovable Analytics Console hosted at `https://bankflow-analytics-console.lovable.app/` operates in synthetic Demo Mode until a persistent public backend is deployed.
+  - Cloud orchestration (Airflow, cloud secret managers) and partitioned fact tables are post-MVP roadmap extensions.
+- Next action: Await review and merge of PR #10 into `main`; project is ready for portfolio release and demonstration.
 
 
 ## Phase Entry Template

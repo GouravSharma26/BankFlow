@@ -4,15 +4,18 @@
 
 ## 1. Current repository state
 
-BankFlow is a fully verified, runnable Python 3.12 and PostgreSQL CLI ETL and analytics warehouse for synthetic banking data. The implemented and tested core includes:
+BankFlow is a fully verified, hardened, runnable Python 3.12 and PostgreSQL CLI ETL, analytics warehouse, and read-only reporting API for synthetic banking data. The implemented and tested core includes:
 - Staging ingestion with source lineage preservation.
 - Rule-based contract validation and quarantined record tracking.
 - Conformed dimensional warehouse loading with date, transaction type, branch, customer, and account dimensions, and transaction facts.
-- Idempotent replay safety distinguishing identical replays from conflicting payloads with concurrency protection.
+- Database-enforced idempotent replay safety distinguishing identical replays from conflicting payloads with concurrency protection.
 - End-to-end reconciliation auditing records and monetary balances.
 - Repeatable SQL analytics pack for transaction volume, channel/type mix, branch metrics, batch health, and quarantine analysis.
+- Read-only reporting REST API (`bankflow serve`) with dedicated least-privilege role (`bankflow_reporting_user`) and frontend integration contract for the Lovable web console.
+- GitHub Actions CI workflow running with mandatory PostgreSQL integration testing on push and pull requests.
+- Complete portfolio demonstration and interview walk-through in [`docs/demo_walkthrough.md`](docs/demo_walkthrough.md).
 
-Cloud scheduling, managed cloud hosting, and BI dashboards (Power BI / Metabase) are deferred follow-up items.
+Cloud scheduling, managed cloud hosting, and live internet API hosting are deferred follow-up items.
 
 GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 

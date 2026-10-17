@@ -122,6 +122,9 @@ class DatabaseConfig:
             "main",
             "real",
             "postgres",
+            "stage",
+            "staging",
+            "release",
         }
         if any(token in FORBIDDEN_PROD_TOKENS for token in tokens):
             return False

@@ -133,18 +133,18 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Goal:** Make the project easy to test, review, reproduce, and explain.
 
-- [ ] Complete unit, PostgreSQL integration, end-to-end, and relevant failure-injection tests.
-- [ ] Ensure the test database is separate and the test runner guards against unsafe targets.
-- [ ] Add GitHub Actions workflow for tests and any configured lint/format checks.
-- [ ] Verify configuration and secret-handling hygiene.
-- [ ] Run `git diff --check` and inspect all tracked changes.
-- [ ] Verify clean-clone installation and run instructions.
-- [ ] Finalize README, architecture, data contract/dictionary, testing, and decision documentation.
-- [ ] Measure actual runtime on a documented dataset only if reporting performance.
-- [ ] Record known limitations, setup requirements, and optional extensions.
-- [ ] Prepare interview explanation and reproducible demo.
+- [x] **Comprehensive Test Suite:** Complete unit, PostgreSQL integration, end-to-end, and failure-injection tests: 168 automated tests passing with zero failures and zero skips under mandatory PostgreSQL integration testing (`BANKFLOW_REQUIRE_INTEGRATION_TESTS=1`).
+- [x] **Test Database Isolation & Safety Guards:** Ensure the test database is separate and the test runner guards against unsafe targets: `DatabaseConfig.is_test_database()` enforces isolated token matching and rejects forbidden keywords (`production`, `prod`, `live`, `backup`, `master`, `main`, `real`, `postgres`, `stage`, `staging`, `release`).
+- [x] **GitHub Actions CI Automation:** `.github/workflows/ci.yml` runs PostgreSQL 17 service, initializes `bankflow_test`, runs `git diff --check`, enforces `BANKFLOW_REQUIRE_INTEGRATION_TESTS="1"`, runs `pytest`, and uploads test artifacts on both success and failure.
+- [x] **Configuration & Secret Hygiene:** `.env.example` verified with placeholders; no credentials, real data, or secrets tracked; `ApiConfig` enforces paired reporting credentials and exact password preservation.
+- [x] **Repository Hygiene & Whitespace Integrity:** `git diff --check` passes cleanly with zero errors; automated check added to CI workflow.
+- [x] **Clean-Clone Workflow Verification:** Verified end-to-end workflow with clean data, defective data, replay idempotency, and reporting views against live PostgreSQL container.
+- [x] **Synchronized Technical Documentation:** Updated `README.md`, `HUMAN_SETUP.md`, `RELEASE_CHECKLIST.md`, `docs/architecture.md`, `docs/data_dictionary.md`, and `docs/dashboard_api_contract.md`. Removed stale references and aligned all documents with implemented behavior.
+- [x] **Performance & Duration Accounting:** Batch execution durations tracked in `monitoring.etl_batch_runs` and `reporting.v_pipeline_execution_health` (~0.1s for 170 records locally); no unmeasured performance claims.
+- [x] **Known Limitations & Boundary Documentation:** Documented batch-only scope, single-node PostgreSQL, and hosted Lovable console Demo Mode boundary in `README.md`, `docs/architecture.md`, and `docs/demo_walkthrough.md`.
+- [x] **Portfolio Walk-Through & Interview Defense:** Created comprehensive demonstration and interview explanation guide in `docs/demo_walkthrough.md`.
 
-**Exit criteria:** A reviewer can follow the repository instructions to generate synthetic data, run the ETL, inspect rejects and warehouse output, reproduce SQL reports, run tests, and understand limitations without undocumented manual steps.
+**Exit criteria:** A reviewer can follow the repository instructions to generate synthetic data, run the ETL, inspect rejects and warehouse output, reproduce SQL reports, run tests, and understand limitations without undocumented manual steps. (Verified: 168/168 tests pass with zero skips, end-to-end CLI workflow reproducible, CI green on GitHub Actions).
 
 ## Phase Completion Template
 

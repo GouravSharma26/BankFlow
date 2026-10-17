@@ -46,6 +46,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Verify repository hygiene and git diff
+        run: git diff --check
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

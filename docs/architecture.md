@@ -1,6 +1,6 @@
 # BankFlow — Architecture
 
-> Status: Current through Phase 4 (SQL Analytics and Reporting Layer implemented and verified). The operational batch ETL, dimensional warehouse, monitoring/quarantine, and conformed analytical reporting schema are active.
+> Status: Current through Phase 6 (Portfolio release, hardening, CI, and walk-through verified). Operational batch ETL, dimensional warehouse, monitoring/quarantine, conformed analytical reporting schema, read-only REST API, and CI automation are active.
 
 ## 1. Design Goals
 
@@ -52,13 +52,22 @@
                 |
                 v
   +--------------------------+
-  | Reporting Views / SQL    |
+  | Reporting Views (SQL)    |
   +-------------+------------+
                 |
-                v
-  +--------------------------+
-  | Dashboard / CSV Reports  |
-  +--------------------------+
+       +--------+--------+
+       |                 |
+       v                 v
++--------------+   +-------------------------------+
+| Python CLI   |   | Read-Only FastAPI Service     |
+| bankflow rpt |   | bankflow serve (least-priv.)  |
++--------------+   +---------------+---------------+
+                                   |
+                                   v
+                   +-------------------------------+
+                   | Lovable Analytics Console     |
+                   | (Web App / Demo Mode Boundary)|
+                   +-------------------------------+
 
 Operational metadata: batch state, counts, timings, reconciliation,
 and error summaries are persisted separately and linked by batch ID.
