@@ -804,8 +804,8 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: DEPLOYMENT-READY
 - Date: 2026-10-18
 - Branch: main
-- Commit SHA: pending commit
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/pending>
+- Commit SHA: 5e38afc485c2cbf94628ee3e2c3fe105650fcff9
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/5e38afc485c2cbf94628ee3e2c3fe105650fcff9>
 - Push status: Ready for push to origin/main
 - Objective: Prepare and deploy the existing BankFlow application as a publicly accessible portfolio demo connecting the React dashboard, FastAPI reporting API, and PostgreSQL populated exclusively with synthetic data.
 - Changes delivered:
