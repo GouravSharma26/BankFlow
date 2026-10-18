@@ -804,9 +804,9 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: DEPLOYMENT-READY
 - Date: 2026-10-18
 - Branch: main
-- Commit SHA: 5e38afc485c2cbf94628ee3e2c3fe105650fcff9
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/5e38afc485c2cbf94628ee3e2c3fe105650fcff9>
-- Push status: Ready for push to origin/main
+- Commit SHA: 5e38afc485c2cbf94628ee3e2c3fe105650fcff9 (impl), 76fe049646b5e0ee76b51c1106e572076395b0fe (log)
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/76fe049646b5e0ee76b51c1106e572076395b0fe>
+- Push status: Pushed to origin/main; verified CI run <https://github.com/GouravSharma26/BankFlow/actions/runs/39107470116> (both Frontend checks and build and Python and PostgreSQL tests succeeded)
 - Objective: Prepare and deploy the existing BankFlow application as a publicly accessible portfolio demo connecting the React dashboard, FastAPI reporting API, and PostgreSQL populated exclusively with synthetic data.
 - Changes delivered:
   1. **Deployment Architecture Design (`docs/deployment.md`):** Designed decoupled three-tier production architecture using free-tier providers (Vercel/Netlify for React SPA, Render Web Service/Docker PaaS for read-only FastAPI API, Neon Serverless Postgres for managed database). Evaluated cold-start behaviors, storage limits, and expiration policies.
