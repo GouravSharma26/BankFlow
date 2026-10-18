@@ -166,6 +166,38 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Exit criteria:** A reviewer can follow the documentation, start the backend and frontend locally, and use a real interactive dashboard powered by the existing API and synthetic database records; all 22 frontend tests, linting, and build pass; CI runs both backend and frontend suites.
 
+## Phase 8 — Public Portfolio Deployment (Status: DEPLOYMENT-READY)
+
+**Goal:** Prepare and deploy the existing BankFlow application as a publicly accessible portfolio demo connecting the React dashboard, FastAPI reporting API, and PostgreSQL populated exclusively with synthetic data.
+
+- [x] **Deployment Architecture & Provider Design (`docs/deployment.md`):** Designed decoupled, zero-cost architecture evaluating Vercel/Netlify for static React/Vite dashboard, Render Web Service/Docker PaaS for FastAPI, and Neon Serverless Postgres for managed database. Documented cold-start, storage, and expiration trade-offs.
+- [x] **Platform Configuration Files:**
+  - `render.yaml`: Render Blueprint for 1-click deployment with environment sync rules, auto-deploy, and healthcheck `/api/v1/health`.
+  - `Dockerfile`: Multi-stage, non-root (UID 10001) container for containerized PaaS deployment (Railway, Koyeb, Fly.io, Cloud Run).
+  - `Procfile`: PaaS web entrypoint (`bankflow serve --host 0.0.0.0`).
+  - `frontend/vercel.json` & `frontend/public/_redirects` & `netlify.toml`: Client-side SPA routing and cache headers.
+- [x] **API & Database Cloud Readiness:**
+  - `src/bankflow/api/config.py`: Automatically respects platform-assigned `PORT` and `HOST` (Render, Cloud Run), and supports dedicated `BANKFLOW_REPORTING_DATABASE_URL`.
+  - `src/bankflow/config.py`: Added full TLS/SSL query string and environment parsing (`sslmode=require`), preserved when constructing reporting database configs.
+  - `src/bankflow/__main__.py`: Updated `serve` command to support `--host 0.0.0.0` and fallback to `HOST`/`PORT`.
+- [x] **Frontend Cloud Readiness & Localhost Protection (`frontend/src/services/api.ts`):**
+  - Configurable at build time via `VITE_BANKFLOW_API_BASE_URL`.
+  - Guarded `getApiBaseUrl()`: when hosted on a public domain without explicit API URL, never falls back to visitor `localhost`; returns relative path and prompts for configuration.
+  - Added unit tests in `frontend/src/test/api.test.ts` verifying public domain behavior and URL trimming.
+- [x] **Synthetic Database Bootstrap Script (`scripts/bootstrap_remote_db.py`):**
+  - Idempotently initializes remote schemas (`staging`, `monitoring`, `quarantine`, `warehouse`, `reporting`).
+  - Provisions `bankflow_reporting_user` using `sql/06_reporting_role.sql` and sets reporting password securely without echoing.
+  - Generates reproducible synthetic data (seed 42, 500 transactions with realistic defect cases).
+  - Runs ETL pipeline, verifies warehouse loading, audits reconciliation, and runs read-only verification query.
+- [x] **Production Deployment Smoke Test Runner (`scripts/smoke_test_deployment.py`):**
+  - Implemented 13 non-destructive automated checks verifying API root, health, overview metrics, daily trends, deposit/withdrawal share, branch/channel breakdown, type mix, quality issues, batch audit, paginated transactions, CORS preflight, read-only 405 rejection, and frontend UI delivery without printing secrets.
+  - Added unit test suite in `tests/test_deployment_scripts.py`.
+- [x] **Documentation & Runbooks:**
+  - Created `docs/deployment.md` with complete step-by-step instructions for database provisioning, schema bootstrap, API deployment, frontend deployment, CORS configuration, smoke testing, troubleshooting, and teardown.
+  - Updated `README.md`, `HUMAN_SETUP.md`, `docs/architecture.md`, and `PHASE_LOG.md`.
+
+**Exit criteria:** Deployment configuration, cloud compatibility, bootstrap scripts, smoke test runner, and documentation are complete and verified; full test suites pass with zero failures and zero skips under mandatory integration testing; clean `git diff --check`.
+
 ## Phase Completion Template
 
 Copy this block into `PHASE_LOG.md` after each phase:

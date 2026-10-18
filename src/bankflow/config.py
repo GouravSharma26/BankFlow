@@ -9,7 +9,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from dotenv import load_dotenv
 
@@ -26,6 +26,7 @@ class DatabaseConfig:
     user: str = "postgres"
     password: str = ""
     url: Optional[str] = None
+    sslmode: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.url:
@@ -40,11 +41,20 @@ class DatabaseConfig:
                 object.__setattr__(self, "user", parsed.username)
             if parsed.password:
                 object.__setattr__(self, "password", parsed.password)
+            if parsed.query and not self.sslmode:
+                query_params = parse_qs(parsed.query)
+                if "sslmode" in query_params and query_params["sslmode"]:
+                    object.__setattr__(self, "sslmode", query_params["sslmode"][0])
 
     @classmethod
     def from_url(cls, url: str) -> DatabaseConfig:
         """Construct from a connection URL."""
         parsed = urlparse(url)
+        sslmode = None
+        if parsed.query:
+            query_params = parse_qs(parsed.query)
+            if "sslmode" in query_params and query_params["sslmode"]:
+                sslmode = query_params["sslmode"][0]
         return cls(
             host=parsed.hostname or "localhost",
             port=parsed.port or 5432,
@@ -52,6 +62,7 @@ class DatabaseConfig:
             user=parsed.username or "postgres",
             password=parsed.password or "",
             url=url,
+            sslmode=sslmode,
         )
 
     @classmethod
@@ -71,6 +82,7 @@ class DatabaseConfig:
         name = os.getenv(f"{prefix}NAME", "bankflow")
         user = os.getenv(f"{prefix}USER", "postgres")
         password = os.getenv(f"{prefix}PASSWORD", "")
+        sslmode = os.getenv(f"{prefix}SSLMODE") or os.getenv("PGSSLMODE")
 
         return cls(
             host=host,
@@ -79,6 +91,7 @@ class DatabaseConfig:
             user=user,
             password=password,
             url=None,
+            sslmode=sslmode,
         )
 
     def get_dsn(self) -> str:
@@ -93,6 +106,8 @@ class DatabaseConfig:
         ]
         if self.password:
             parts.append(f"password={self.password}")
+        if self.sslmode:
+            parts.append(f"sslmode={self.sslmode}")
         return " ".join(parts)
 
     def is_test_database(self) -> bool:

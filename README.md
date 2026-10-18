@@ -189,10 +189,25 @@ Reporting Views (PostgreSQL `reporting` schema)
              [Optional external prototype: Lovable App]
 ```
 
-Further details: [portfolio demo walk-through](docs/demo_walkthrough.md) · [architecture](docs/architecture.md) · [dashboard API contract](docs/dashboard_api_contract.md) · [data contract](docs/data_contract.md) · [data dictionary](docs/data_dictionary.md) · [quality rules](docs/data_quality_rules.md) · [metric definitions](docs/metric_definitions.md) · [testing strategy](docs/testing_strategy.md) · [developer setup](HUMAN_SETUP.md) · [development checklist](DEVELOPMENT_CHECKLIST.md).
+Further details: [public deployment guide](docs/deployment.md) · [portfolio demo walk-through](docs/demo_walkthrough.md) · [architecture](docs/architecture.md) · [dashboard API contract](docs/dashboard_api_contract.md) · [data contract](docs/data_contract.md) · [data dictionary](docs/data_dictionary.md) · [quality rules](docs/data_quality_rules.md) · [metric definitions](docs/metric_definitions.md) · [testing strategy](docs/testing_strategy.md) · [developer setup](HUMAN_SETUP.md) · [development checklist](DEVELOPMENT_CHECKLIST.md).
 
-## Deployment notes and limitations
+## Public portfolio deployment
 
-The repeatable local deployment uses Docker Compose for PostgreSQL and the installed Python CLI and FastAPI server. A scheduled/cloud deployment can run the CLI as a batch job with database credentials supplied through environment variables or `DATABASE_URL`; keep secrets out of source control. This repository provides a local read-only HTTP API endpoint designed to integrate with the Lovable dashboard console. The public hosted dashboard remains in synthetic demo mode until a persistent backend API and PostgreSQL database are hosted in the cloud.
+BankFlow is fully prepared for public portfolio deployment using zero-cost cloud tiers:
 
-Use synthetic datasets only. Never commit `.env`, credentials, or real banking/customer data.
+1. **Managed Database (Neon Serverless Postgres):** Provides PostgreSQL with SSL (`sslmode=require`). Initialize schemas, create the least-privilege `bankflow_reporting_user`, and load synthetic demo data using:
+   ```bash
+   python scripts/bootstrap_remote_db.py --seed 42 --transactions 500
+   ```
+2. **Read-Only Reporting API (Render / Docker):** Deploy the backend using the 1-click Render Blueprint ([`render.yaml`](render.yaml)), the containerized [`Dockerfile`](Dockerfile), or [`Procfile`](Procfile) with `bankflow serve --host 0.0.0.0`.
+3. **Analytics Dashboard (Vercel / Netlify):** Deploy [`frontend/`](frontend/) with `VITE_BANKFLOW_API_BASE_URL` pointing to the public API. Routing is managed by [`frontend/vercel.json`](frontend/vercel.json) or [`netlify.toml`](netlify.toml).
+4. **Automated Smoke Testing:** Validate the live deployment end-to-end without printing secrets:
+   ```bash
+   python scripts/smoke_test_deployment.py --api-url https://your-api.onrender.com --frontend-url https://your-dashboard.vercel.app
+   ```
+
+Complete step-by-step instructions, environment variable matrix, cold-start handling, and troubleshooting: [`docs/deployment.md`](docs/deployment.md).
+
+## Limitations and safety
+
+Use synthetic datasets only. Never commit `.env`, credentials, or real banking/customer data. Real banking integrations, live card transactions, and payment execution are out of scope.

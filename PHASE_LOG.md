@@ -797,7 +797,51 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Known limitations:
   - Synthetic data only.
   - Dashboard is an interactive SPA designed for local execution alongside `python -m bankflow serve`.
-- Next action: Phase 7 is complete and verified on main with successful CI execution. Await user review and instructions.
+- Next action: Phase 7 is complete and verified on main with successful CI execution.
+
+### Phase 8 — Public Portfolio Deployment
+
+- Status: DEPLOYMENT-READY
+- Date: 2026-10-18
+- Branch: main
+- Commit SHA: pending commit
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/pending>
+- Push status: Ready for push to origin/main
+- Objective: Prepare and deploy the existing BankFlow application as a publicly accessible portfolio demo connecting the React dashboard, FastAPI reporting API, and PostgreSQL populated exclusively with synthetic data.
+- Changes delivered:
+  1. **Deployment Architecture Design (`docs/deployment.md`):** Designed decoupled three-tier production architecture using free-tier providers (Vercel/Netlify for React SPA, Render Web Service/Docker PaaS for read-only FastAPI API, Neon Serverless Postgres for managed database). Evaluated cold-start behaviors, storage limits, and expiration policies.
+  2. **Render Blueprint Specification (`render.yaml`):** Created 1-click infrastructure-as-code Blueprint for Render free web service with Python 3.12, automated healthcheck `/api/v1/health`, least-privilege reporting role env vars, and auto-deploy.
+  3. **Multi-Stage Containerization (`Dockerfile`, `Procfile`):** Security-hardened multi-stage Docker build running as non-root user `bankflow` (UID 10001) for containerized deployments across any Docker PaaS (Fly.io, Koyeb, Railway, Cloud Run). Created `Procfile` with `web: bankflow serve --host 0.0.0.0`.
+  4. **Frontend Static Routing Configs (`frontend/vercel.json`, `frontend/public/_redirects`, `netlify.toml`):** Configured SPA client-side route rewrites and immutable asset caching for Vercel, Netlify, and Cloudflare Pages.
+  5. **API Host, Port, and Cloud Database Integration:**
+     - `src/bankflow/api/config.py`: Automatically respects platform-assigned `PORT` and `HOST` (e.g. Render, Cloud Run), and supports dedicated `BANKFLOW_REPORTING_DATABASE_URL`.
+     - `src/bankflow/config.py`: Added full TLS/SSL query string and environment parsing (`sslmode=require`), preserved when constructing reporting database configs.
+     - `src/bankflow/__main__.py`: Updated `serve` command to support `--host 0.0.0.0` and fallback to `HOST`/`PORT`.
+  6. **Frontend Localhost Protection (`frontend/src/services/api.ts`):** Guarded `getApiBaseUrl()` so that when deployed on a public domain without explicit `VITE_BANKFLOW_API_BASE_URL`, the frontend never queries visitor `localhost`; instead returns relative path and prompts for proper build-time configuration. Added unit tests in `frontend/src/test/api.test.ts`.
+  7. **Remote Database Bootstrap & Seeding Script (`scripts/bootstrap_remote_db.py`):** Automated, idempotent schema initialization (`staging`, `monitoring`, `quarantine`, `warehouse`, `reporting`), secure `bankflow_reporting_user` provisioning via `sql/06_reporting_role.sql`, reproducible synthetic data generation (seed 42, 500 transactions with realistic defect cases), warehouse loading, reconciliation auditing, and read-only query verification.
+  8. **Automated Deployment Smoke Test Runner (`scripts/smoke_test_deployment.py`):** Comprehensive 13-test battery verifying API root, health, overview metrics, daily trends, deposit/withdrawal share, branch/channel breakdown, type mix, quality issues, batch audit, paginated transactions, CORS preflight, read-only 405 rejection, and frontend UI delivery without printing secrets.
+  9. **Deployment Test Suite (`tests/test_deployment_scripts.py`):** Added unit tests covering smoke test runner execution, error reporting, and database disconnection detection.
+  10. **Comprehensive Documentation & Runbooks:** Created `docs/deployment.md` and updated `README.md`, `HUMAN_SETUP.md`, `docs/architecture.md`, and `DEVELOPMENT_CHECKLIST.md`.
+- Tests/commands executed:
+  - `npm run lint` (`tsc --noEmit` in `frontend/`: 0 errors)
+  - `npm run test` (Vitest: 25 passed, 0 skipped, 0 failed)
+  - `npm run build` (Vite production build: 0 errors)
+  - `pytest tests/test_config.py` (6 passed, 0 skipped, 0 failed)
+  - `pytest tests/test_api_config.py` (22 passed, 0 skipped, 0 failed)
+  - `pytest tests/test_deployment_scripts.py` (3 passed, 0 skipped, 0 failed)
+  - `pytest tests -v` with `BANKFLOW_REQUIRE_INTEGRATION_TESTS=1` against `bankflow_test` (175 passed, 0 skipped, 0 failed)
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes:
+  - Frontend: 25 passed, 0 skipped, 0 failed.
+  - Python: 175 passed, 0 skipped, 0 failed with mandatory integration testing.
+- Acceptance evidence:
+  - Deployment configurations verified for Vercel, Netlify, Render, and Docker.
+  - Remote database bootstrap script tested and validated.
+  - Smoke test runner verified across all 13 checks.
+  - Zero test failures and zero test skips across entire repository.
+- Known limitations:
+  - Phase 8 is recorded as DEPLOYMENT-READY per human-action boundary until the user creates third-party cloud accounts (Neon, Render, Vercel) and provides live deployed URLs.
+- Next action: Commit Phase 8 changes directly to main, push to origin/main, and await live cloud account credentials or deployment URLs for smoke test execution.
 
 
 ## Phase Entry Template

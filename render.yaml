@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: bankflow-reporting-api
+    runtime: python
+    plan: free
+    region: ohio
+    buildCommand: pip install --upgrade pip && pip install -e ".[api]"
+    startCommand: bankflow serve --host 0.0.0.0
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.9
+      - key: BANKFLOW_API_HOST
+        value: 0.0.0.0
+      - key: BANKFLOW_DB_HOST
+        sync: false
+      - key: BANKFLOW_DB_PORT
+        value: "5432"
+      - key: BANKFLOW_DB_NAME
+        sync: false
+      - key: BANKFLOW_DB_USER
+        sync: false
+      - key: BANKFLOW_DB_PASSWORD
+        sync: false
+      - key: BANKFLOW_DB_SSLMODE
+        value: require
+      - key: BANKFLOW_REPORTING_DB_USER
+        value: bankflow_reporting_user
+      - key: BANKFLOW_REPORTING_DB_PASSWORD
+        sync: false
+      - key: BANKFLOW_CORS_ORIGINS
+        sync: false

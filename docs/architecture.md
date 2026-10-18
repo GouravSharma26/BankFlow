@@ -1,6 +1,6 @@
 # BankFlow — Architecture
 
-> Status: Current through Phase 7 (Interactive Analytics Dashboard implemented and integrated). Operational batch ETL, dimensional warehouse, monitoring/quarantine, conformed analytical reporting schema, read-only REST API, in-repo React/Vite analytics console (`frontend/`), and CI automation are active.
+> Status: Current through Phase 8 (Public Portfolio Deployment Architecture prepared). Operational batch ETL, dimensional warehouse, monitoring/quarantine, conformed analytical reporting schema, read-only REST API, in-repo React/Vite analytics console (`frontend/`), cloud deployment configs (`render.yaml`, `Dockerfile`, `vercel.json`), and CI automation are active.
 
 ## 1. Design Goals
 
@@ -228,3 +228,39 @@ Expected high-level CLI flow (final exact syntax must be verified and documented
 ## 10. Architecture Decision Triggers
 
 Before adding a new service, library, schema, or deployment environment, state the problem it solves, simplest alternative, testing impact, operational cost, and what would become more complex. Keep the MVP local and boring until correctness is established.
+
+## 11. Public Portfolio Deployment Architecture
+
+To demonstrate BankFlow as an end-to-end cloud data portfolio, the system supports a three-tier decoupled cloud deployment using zero-cost free tiers:
+
+```text
+  [Web Browser]
+        |
+        v HTTPS (GET/OPTIONS)
+  +-------------------------------------------------------+
+  | Static Frontend (Vercel / Netlify)                   |
+  | React 19 + Vite + TypeScript in frontend/             |
+  | Configured via vercel.json / netlify.toml             |
+  +-------------------------------------------------------+
+        |
+        v HTTPS REST API
+  +-------------------------------------------------------+
+  | Read-Only Reporting API (Render / Docker)             |
+  | FastAPI + Uvicorn binding to 0.0.0.0:$PORT            |
+  | Least-privilege role: bankflow_reporting_user         |
+  +-------------------------------------------------------+
+        |
+        v PostgreSQL TLS (sslmode=require)
+  +-------------------------------------------------------+
+  | Managed PostgreSQL (Neon Serverless Postgres)         |
+  | Staging, quarantine, dimensional warehouse schemas    |
+  | Strict synthetic dataset only (seeded via bootstrap)  |
+  +-------------------------------------------------------+
+```
+
+### Architectural Deployment Invariants:
+1. **Network Security & CORS:** Frontend origins are restricted via `BANKFLOW_CORS_ORIGINS`. Only read-only HTTP methods (`GET`, `OPTIONS`) are permitted by `CORSMiddleware`.
+2. **Database Least Privilege:** The public API connects strictly as `bankflow_reporting_user`, granted `SELECT` only on `reporting.v_*` views with `default_transaction_read_only = on` and strict query timeouts.
+3. **Transport Security:** Cloud PostgreSQL connections require TLS (`sslmode=require`), supported natively via `DatabaseConfig` and URL query parameters.
+4. **Localhost Isolation:** Static frontend builds check hostname context; when served on a public domain without explicit `VITE_BANKFLOW_API_BASE_URL`, the client never attempts requests against visitor `localhost`.
+5. **Repeatable Verification:** End-to-end cloud readiness is audited without credential exposure via `scripts/smoke_test_deployment.py`.

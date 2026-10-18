@@ -13,9 +13,8 @@ BankFlow is a fully verified, hardened, runnable Python 3.12 and PostgreSQL CLI 
 - Repeatable SQL analytics pack for transaction volume, channel/type mix, branch metrics, batch health, and quarantine analysis.
 - Read-only reporting REST API (`bankflow serve`) with dedicated least-privilege role (`bankflow_reporting_user`) and frontend integration contract for the Lovable web console.
 - GitHub Actions CI workflow running with mandatory PostgreSQL integration testing on push and pull requests.
-- Complete portfolio demonstration and interview walk-through in [`docs/demo_walkthrough.md`](docs/demo_walkthrough.md).
-
-Cloud scheduling, managed cloud hosting, and live internet API hosting are deferred follow-up items.
+- In-repository React 19 analytics dashboard in `frontend/` with Connected and Demo modes.
+- Public portfolio deployment configuration for managed PostgreSQL (Neon), FastAPI (Render / Docker), and static frontend (Vercel / Netlify) with automated smoke tests in [`docs/deployment.md`](docs/deployment.md).
 
 GitHub repository: <https://github.com/GouravSharma26/BankFlow>
 

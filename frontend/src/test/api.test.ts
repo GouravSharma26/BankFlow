@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { BankFlowApi, ApiError } from '../services/api';
+import { BankFlowApi, ApiError, getApiBaseUrl } from '../services/api';
 import { DEMO_HEALTH } from '../data/demoFixtures';
 
 describe('BankFlowApi Client', () => {
@@ -129,6 +129,42 @@ describe('BankFlowApi Client', () => {
         expect(apiErr.statusCode).toBe(0);
         expect(apiErr.message).toContain('Unable to connect to BankFlow API');
       }
+    });
+  });
+
+  describe('getApiBaseUrl URL Resolution & Protection', () => {
+    const originalEnv = import.meta.env.VITE_BANKFLOW_API_BASE_URL;
+
+    afterEach(() => {
+      import.meta.env.VITE_BANKFLOW_API_BASE_URL = originalEnv;
+    });
+
+    it('returns configured VITE_BANKFLOW_API_BASE_URL without trailing slashes', () => {
+      import.meta.env.VITE_BANKFLOW_API_BASE_URL = 'https://bankflow-api.onrender.com///';
+      expect(getApiBaseUrl()).toBe('https://bankflow-api.onrender.com');
+    });
+
+    it('returns http://localhost:8000 when hostname is localhost and env is empty', () => {
+      delete import.meta.env.VITE_BANKFLOW_API_BASE_URL;
+      expect(getApiBaseUrl()).toBe('http://localhost:8000');
+    });
+
+    it('returns empty string on public domain without env var to protect against querying visitor localhost', () => {
+      delete import.meta.env.VITE_BANKFLOW_API_BASE_URL;
+      const originalLocation = window.location;
+      // Mock public hostname
+      Object.defineProperty(window, 'location', {
+        value: { hostname: 'bankflow-analytics.vercel.app' },
+        writable: true,
+      });
+
+      expect(getApiBaseUrl()).toBe('');
+
+      // Restore location
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      });
     });
   });
 });

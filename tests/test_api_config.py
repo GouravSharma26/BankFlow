@@ -203,3 +203,44 @@ def test_bankflow_serve_cli_fails_on_unpaired_reporting_credentials(monkeypatch)
     assert result.exit_code == 1
     assert "API Configuration Error" in result.output
     assert "BANKFLOW_REPORTING_DB_PASSWORD is not set" in result.output
+
+
+def test_api_config_platform_port_and_host_fallback(monkeypatch):
+    """Verify platform-assigned PORT and HOST environment variables are used when BANKFLOW_API_* are unset."""
+    monkeypatch.delenv("BANKFLOW_API_PORT", raising=False)
+    monkeypatch.delenv("BANKFLOW_API_HOST", raising=False)
+    monkeypatch.setenv("PORT", "10000")
+    monkeypatch.setenv("HOST", "0.0.0.0")
+
+    config = ApiConfig.from_env()
+    assert config.port == 10000
+    assert config.host == "0.0.0.0"
+
+
+def test_api_config_reporting_database_url_support(monkeypatch):
+    """Verify BANKFLOW_REPORTING_DATABASE_URL connects directly with reporting credentials."""
+    reporting_url = "postgresql://bankflow_reporting_user:secret_pw@remote-pg.render.com:5432/reporting_db?sslmode=require"
+    monkeypatch.delenv("BANKFLOW_REPORTING_DB_USER", raising=False)
+    monkeypatch.delenv("BANKFLOW_REPORTING_DB_PASSWORD", raising=False)
+    monkeypatch.setenv("BANKFLOW_REPORTING_DATABASE_URL", reporting_url)
+
+    config = ApiConfig.from_env()
+    assert config.db_config.user == "bankflow_reporting_user"
+    assert config.db_config.password == "secret_pw"
+    assert config.db_config.host == "remote-pg.render.com"
+    assert config.db_config.name == "reporting_db"
+    assert config.db_config.sslmode == "require"
+
+
+def test_api_config_preserves_base_db_sslmode_with_reporting_credentials(monkeypatch):
+    """Verify sslmode from base database is preserved when dedicated reporting credentials are provided."""
+    base_url = "postgresql://admin:admin_pass@ep-cool-fog-123.neon.tech:5432/bankflow?sslmode=require"
+    monkeypatch.setenv("DATABASE_URL", base_url)
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_USER", "custom_reporting_role")
+    monkeypatch.setenv("BANKFLOW_REPORTING_DB_PASSWORD", "custom_reporting_pass")
+
+    config = ApiConfig.from_env()
+    assert config.db_config.user == "custom_reporting_role"
+    assert config.db_config.password == "custom_reporting_pass"
+    assert config.db_config.sslmode == "require"
+    assert "sslmode=require" in config.db_config.get_dsn()

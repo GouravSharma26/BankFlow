@@ -52,8 +52,28 @@ export class ApiError extends Error {
 }
 
 export function getApiBaseUrl(): string {
-  // Vite env variable or default local FastAPI server URL
-  return import.meta.env.VITE_BANKFLOW_API_BASE_URL || 'http://localhost:8000';
+  const configured = (import.meta.env.VITE_BANKFLOW_API_BASE_URL as string | undefined)?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, '');
+  }
+
+  // Prevent deployed static frontend builds on public domains from pointing users at localhost
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname;
+    const isLocalhost =
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '[::1]' ||
+      hostname.endsWith('.local');
+    if (!isLocalhost) {
+      // In production hosting on a remote domain without explicit VITE_BANKFLOW_API_BASE_URL:
+      // Return empty string (relative path) to avoid cross-origin queries to visitor localhost
+      return '';
+    }
+  }
+
+  // Default local FastAPI server URL for development
+  return 'http://localhost:8000';
 }
 
 function buildQueryString(params: Record<string, string | number | undefined | null>): string {
@@ -81,8 +101,14 @@ async function fetchFromApi<T>(endpoint: string, params: Record<string, string |
     });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Network request failed';
+    const targetDesc = baseUrl ? `at ${baseUrl}` : 'endpoint';
+    const advice = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')
+      ? "Ensure backend is running ('python -m bankflow serve')."
+      : baseUrl === ''
+      ? 'Public deployment requires VITE_BANKFLOW_API_BASE_URL to be configured during build.'
+      : 'Check API server health, CORS configuration, or cold-start activation.';
     throw new ApiError(
-      `Unable to connect to BankFlow API at ${baseUrl}. Ensure backend is running ('python -m bankflow serve'). Details: ${errorMsg}`,
+      `Unable to connect to BankFlow API ${targetDesc}. ${advice} Details: ${errorMsg}`,
       0
     );
   }

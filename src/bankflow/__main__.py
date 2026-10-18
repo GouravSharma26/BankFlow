@@ -436,8 +436,8 @@ def report_cmd(name: str, currency: Optional[str], limit: int, test_db: bool):
 
 
 @cli.command("serve")
-@click.option("--host", default=None, help="Host network interface to bind the API server. Defaults to BANKFLOW_API_HOST or 127.0.0.1.")
-@click.option("--port", default=None, type=int, help="Port to bind the API server. Defaults to BANKFLOW_API_PORT or 8000.")
+@click.option("--host", default=None, help="Host network interface to bind the API server. Defaults to BANKFLOW_API_HOST, HOST, or 127.0.0.1.")
+@click.option("--port", default=None, type=int, help="Port to bind the API server. Defaults to BANKFLOW_API_PORT, PORT, or 8000.")
 @click.option("--reload", is_flag=True, help="Enable auto-reload on code change.")
 @click.option("--test-db", is_flag=True, help="Serve API against dedicated test database instead of primary.")
 def serve_cmd(host: Optional[str], port: Optional[int], reload: bool, test_db: bool):

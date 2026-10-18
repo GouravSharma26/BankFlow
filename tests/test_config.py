@@ -101,3 +101,24 @@ def test_settings_load_defaults():
     assert settings.test_db.is_test_database() is True
     assert settings.reporting_timezone == "UTC"
     assert settings.default_currency == "USD"
+
+
+def test_database_config_sslmode_parsing(monkeypatch):
+    """Verify sslmode is parsed from query parameters in connection URL and from environment variables."""
+    # From URL query parameters
+    url_with_ssl = "postgresql://user:pass@ep-cool-fog-123.neon.tech:5432/bankflow?sslmode=require"
+    cfg = DatabaseConfig.from_url(url_with_ssl)
+    assert cfg.sslmode == "require"
+    assert "sslmode=require" in cfg.get_dsn()
+
+    # From direct constructor with url
+    cfg_direct = DatabaseConfig(url=url_with_ssl)
+    assert cfg_direct.sslmode == "require"
+
+    # From environment variable prefix
+    monkeypatch.setenv("CUSTOM_DB_HOST", "cloudhost")
+    monkeypatch.setenv("CUSTOM_DB_NAME", "clouddb")
+    monkeypatch.setenv("CUSTOM_DB_SSLMODE", "verify-full")
+    cfg_env = DatabaseConfig.from_env(prefix="CUSTOM_DB_", url_var="NONEXISTENT_URL")
+    assert cfg_env.sslmode == "verify-full"
+    assert "sslmode=verify-full" in cfg_env.get_dsn()
