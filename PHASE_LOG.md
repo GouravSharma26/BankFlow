@@ -848,8 +848,8 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED (Repository Deployment-Ready)
 - Date: 2026-10-18
 - Branch: main
-- Commit SHA: Pending direct commit to main
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow>
+- Commit SHA: 4cab68be8e6b0b7cbfd73d40d2bf1f4f32474967
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/4cab68be8e6b0b7cbfd73d40d2bf1f4f32474967>
 - Push status: Committed directly to main; pushed to origin/main
 - Objective: Address platform-assigned port handling in Docker/API, correct smoke test timeout for cold starts, remove unnecessary admin database credentials from public API configuration, and protect remote database bootstrap targets with explicit host confirmation and TLS validation.
 - Changes delivered:
