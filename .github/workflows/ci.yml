@@ -124,3 +124,34 @@ jobs:
           path: |
             pytest.log
             pytest-junit.xml
+
+  frontend:
+    name: Frontend checks and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript typecheck / lint
+        run: npm run lint
+
+      - name: Run frontend unit and component tests
+        run: npm run test
+
+      - name: Build production bundle
+        run: npm run build

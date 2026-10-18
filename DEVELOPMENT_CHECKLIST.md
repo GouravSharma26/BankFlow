@@ -146,6 +146,26 @@ Initial status for all implementation phases: **NOT STARTED**. Documentation pre
 
 **Exit criteria:** A reviewer can follow the repository instructions to generate synthetic data, run the ETL, inspect rejects and warehouse output, reproduce SQL reports, run tests, and understand limitations without undocumented manual steps. (Verified: 168/168 tests pass with zero skips, end-to-end CLI workflow reproducible, CI green on GitHub Actions).
 
+## Phase 7 — Build the Actual Analytics Dashboard (Status: VERIFIED)
+
+**Goal:** Implement a real, working interactive analytics dashboard inside the repository and integrate it with BankFlow's existing read-only FastAPI reporting API.
+
+- [x] **In-Repo Dedicated Frontend (`frontend/`):** Created a production-grade single-page application using React 19, Vite, TypeScript, Tailwind CSS, Recharts, and Lucide React.
+- [x] **Executive Overview Page:** Summary metric cards for gross transaction value, total transactions, contract acceptance rate, active accounts/customers, latest batch status, and quarantine count. Area chart for daily activity trends and recent batch audit log.
+- [x] **Transaction Analytics Page:** Dual-axis ComposedChart for daily volume vs gross value; comparative BarChart for deposit vs withdrawal value share; breakdown and visual distribution for transaction types/families; tabular analysis by operating region, branch, and channel. Currency selector and date range filters supported.
+- [x] **Data Quality Page:** Rule-coded defect inventory with human-readable descriptions, severity (`ERROR`, `WARNING`, `INFO`) and disposition (`REJECTED`, `ACCEPTED`, `WARNED`, `SKIPPED`) filters. Quarantine table inventory tracking affected rows and recorded issues. Explicit distinction between row-level rejection (quarantined records) and batch-level failure (transaction rollback).
+- [x] **Pipeline Monitoring Page:** Comprehensive batch execution history from `ops_batch_execution` tracking duration, status, reconciliation outcome, row accounting breakdown (extracted, staged, valid, rejected, inserted, updated, skipped), and expandable error summaries.
+- [x] **Transactions Explorer & Ledger Page:** Searchable, paginated query console backed by dimensional fact view `reporting.v_transaction_details`. Supports filtering by currency, status, transaction type, channel, date range, page size, and whitelisted column sorting (`transaction_timestamp`, `amount`, `transaction_id`, `reporting_date`).
+- [x] **Typed API Client & Error Handling:** Strictly matches `docs/dashboard_api_contract.md` and `src/bankflow/api/schemas.py`. Centralized `ApiError` propagation with honest error states and retry actions; never silently falls back to sample data when a live API call fails.
+- [x] **Dual Operating Modes:**
+  - *Connected Mode (Default):* Directly fetches data from local FastAPI service (`python -m bankflow serve`).
+  - *Demo Mode:* Explicitly enabled via `VITE_DEMO_MODE=true` or UI toggle; uses deterministic synthetic fixtures stored in `frontend/src/data/demoFixtures.ts` and renders an unambiguous, persistent `DEMO DATA` banner.
+- [x] **Automated Frontend Testing:** 22 automated tests in `frontend/src/test/` covering API client query serialization, 4xx/5xx handling, network errors, loading/empty/error states, currency switching, demo banner labelling, and component rendering for all 5 views.
+- [x] **CI Automation:** Updated `.github/workflows/ci.yml` with a dedicated `frontend` job running on Ubuntu with Node.js 22, executing `npm ci`, `npm run lint` (`tsc --noEmit`), `npm run test` (`vitest run`), and `npm run build` (`vite build`) alongside existing Python/PostgreSQL test jobs.
+- [x] **Documentation & Setup:** Updated `README.md`, `HUMAN_SETUP.md`, `docs/architecture.md`, `DEVELOPMENT_CHECKLIST.md`, and `PHASE_LOG.md` with exact local launch and test instructions.
+
+**Exit criteria:** A reviewer can follow the documentation, start the backend and frontend locally, and use a real interactive dashboard powered by the existing API and synthetic database records; all 22 frontend tests, linting, and build pass; CI runs both backend and frontend suites.
+
 ## Phase Completion Template
 
 Copy this block into `PHASE_LOG.md` after each phase:

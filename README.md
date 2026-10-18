@@ -29,7 +29,7 @@ BankFlow is a Python and PostgreSQL portfolio project demonstrating an end-to-en
 | Local database | Docker Compose |
 | Automated testing | pytest and PostgreSQL integration tests |
 | Analytics | SQL over a dimensional warehouse |
-| Dashboard Frontend | Lovable Analytics Console (Web App) |
+| Dashboard Frontend | React 19, Vite, TypeScript, Tailwind CSS, Recharts (in `frontend/`) |
 
 ## Quickstart — Windows PowerShell
 
@@ -133,22 +133,35 @@ psql "postgresql://postgres:postgres@localhost:5432/bankflow" -v ON_ERROR_STOP=1
 - All transaction values represent gross positive event amounts; do not interpret gross event sums as net cash flow or account balances.
 - Completed metrics filter strictly on `COMPLETED` transaction status. Reversals are tracked as discrete transaction events rather than destructive modifications.
 
-## Dashboard Console Integration
+## Dashboard Console & Analytics UI
 
-BankFlow integrates with an external web console deployed at [`https://bankflow-analytics-console.lovable.app/`](https://bankflow-analytics-console.lovable.app/):
+BankFlow includes a dedicated, source-controlled frontend application in `frontend/` built with React 19, Vite, TypeScript, Tailwind CSS, Recharts, and Lucide React. It provides an interactive operational and analytical console called **BankFlow Analytics**.
 
-1. **Start the read-only reporting API locally:**
-   ```powershell
-   python -m bankflow serve --host 127.0.0.1 --port 8000
-   ```
-2. **Access interactive API docs:**
-   Navigate to `http://127.0.0.1:8000/docs` in your browser.
-3. **Frontend Connection Contract:**
-   The frontend connects via the public environment variable:
-   ```bash
-   VITE_BANKFLOW_API_BASE_URL=http://localhost:8000
-   ```
-   > **Note on Demo Mode:** The public hosted dashboard operates in synthetic Demo Mode by default until pointed to a running, deployed BankFlow API server. For details on endpoints, security controls, and schemas, consult [`docs/dashboard_api_contract.md`](docs/dashboard_api_contract.md).
+### 1. Start the Reporting API Backend
+
+```powershell
+# In repository root with virtual environment activated:
+python -m bankflow serve --host 127.0.0.1 --port 8000
+```
+
+Interactive OpenAPI documentation is available at `http://127.0.0.1:8000/docs`.
+
+### 2. Start the Frontend Dashboard
+
+```powershell
+# In a second terminal:
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173` in your browser.
+
+### 3. Operating Modes
+
+- **Connected Mode (Default):** Fetches real-time aggregations from the local FastAPI backend and PostgreSQL warehouse. If the backend is unavailable or uninitialized, displays an honest connection error with retry actions (no silent mock fallback).
+- **Demo Mode:** When `VITE_DEMO_MODE=true` is set in `frontend/.env` or toggled via the UI, renders deterministic synthetic preview fixtures and displays an unambiguous, persistent `DEMO DATA` banner so synthetic fixtures cannot be confused with live database state.
+- **Historical Note:** The repository previously referenced an external hosted Lovable prototype. The in-repo `frontend/` application is now the primary, fully testable, source-controlled console.
 
 ## Architecture
 
@@ -172,7 +185,8 @@ Reporting Views (PostgreSQL `reporting` schema)
        +---> Read-Only FastAPI (`bankflow serve`)
                    |
                    v
-             Lovable Analytics Console
+             BankFlow Analytics Console (`frontend/` React + Vite)
+             [Optional external prototype: Lovable App]
 ```
 
 Further details: [portfolio demo walk-through](docs/demo_walkthrough.md) · [architecture](docs/architecture.md) · [dashboard API contract](docs/dashboard_api_contract.md) · [data contract](docs/data_contract.md) · [data dictionary](docs/data_dictionary.md) · [quality rules](docs/data_quality_rules.md) · [metric definitions](docs/metric_definitions.md) · [testing strategy](docs/testing_strategy.md) · [developer setup](HUMAN_SETUP.md) · [development checklist](DEVELOPMENT_CHECKLIST.md).

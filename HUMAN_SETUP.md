@@ -25,9 +25,10 @@ Install and verify these tools before beginning the implementation phase:
 
 - Git, with your GitHub identity configured.
 - Python 3.12 or another Python version explicitly selected by the project after checking dependency compatibility.
+- Node.js 18+ and npm for the React/Vite analytics frontend (`frontend/`).
 - PostgreSQL supported by the chosen local environment.
 - A code editor/Antigravity with access to the local BankFlow folder.
-- Optional later: Power BI Desktop or Metabase, depending on the dashboard choice.
+- Optional: Power BI Desktop or Metabase, depending on external reporting requirements.
 
 Useful checks from a terminal:
 
@@ -172,10 +173,23 @@ If PowerShell blocks virtual-environment activation, use an allowed terminal con
     ```
     *API Documentation:* Explore interactive OpenAPI documentation at `http://127.0.0.1:8000/docs`.
 
-12. **Connect Lovable Analytics Console:**
-    Configure the web application environment variable:
-    ```bash
-    VITE_BANKFLOW_API_BASE_URL=http://localhost:8000
+12. **Run BankFlow Analytics Frontend:**
+    In a separate terminal, install dependencies and launch the Vite development server:
+    ```powershell
+    cd frontend
+    npm install
+    npm run dev
+    ```
+    Access the console at `http://localhost:5173`.
+    To configure custom API URLs or enable demo mode offline, copy `.env.example`:
+    ```powershell
+    Copy-Item .env.example .env
+    ```
+    To run frontend verification checks:
+    ```powershell
+    npm run lint   # TypeScript typecheck (tsc --noEmit)
+    npm run test   # Vitest unit & component test suite
+    npm run build  # Production Vite bundle build
     ```
     *Refer to `docs/dashboard_api_contract.md` for complete API and integration specifications.*
 

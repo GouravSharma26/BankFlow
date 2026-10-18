@@ -1,6 +1,6 @@
 # BankFlow — Architecture
 
-> Status: Current through Phase 6 (Portfolio release, hardening, CI, and walk-through verified). Operational batch ETL, dimensional warehouse, monitoring/quarantine, conformed analytical reporting schema, read-only REST API, and CI automation are active.
+> Status: Current through Phase 7 (Interactive Analytics Dashboard implemented and integrated). Operational batch ETL, dimensional warehouse, monitoring/quarantine, conformed analytical reporting schema, read-only REST API, in-repo React/Vite analytics console (`frontend/`), and CI automation are active.
 
 ## 1. Design Goals
 
@@ -65,8 +65,9 @@
                                    |
                                    v
                    +-------------------------------+
-                   | Lovable Analytics Console     |
-                   | (Web App / Demo Mode Boundary)|
+                   | BankFlow Analytics Console    |
+                   | (React 19 / Vite / TS / UI)   |
+                   | frontend/ app (Demo / Live)   |
                    +-------------------------------+
 
 Operational metadata: batch state, counts, timings, reconciliation,
@@ -127,9 +128,19 @@ The dashboard integration layer connects the conformed `reporting` schema to the
 - **FastAPI Read-Only Backend**: A lightweight, versioned REST API (`src/bankflow/api`) under `/api/v1` exposing the 8 reporting views and health status. Packaged as an optional extra (`pip install -e ".[api]"`).
 - **Least-Privilege Database Role**: A dedicated PostgreSQL role (`bankflow_reporting_user`) with `SELECT` grant exclusively on `reporting.*`. Staging, quarantine, monitoring, and warehouse tables cannot be queried directly or mutated.
 - **Application Defense-in-Depth**: Every database session is explicitly configured with `readonly=True`, `autocommit=True`, and a 5-second `statement_timeout`.
-- **CORS Configuration**: Restricts browser cross-origin requests to configured origins (`https://bankflow-analytics-console.lovable.app`, local dev hosts).
+- **CORS Configuration**: Restricts browser cross-origin requests to configured origins (`http://localhost:5173`, `http://127.0.0.1:5173`, `https://bankflow-analytics-console.lovable.app`).
 - **Zero-Secret Contract**: The API never accepts or returns credentials, connection strings, or raw customer data. The frontend is configured solely via a public base URL environment variable (`VITE_BANKFLOW_API_BASE_URL`).
-- **Demo Mode Boundary**: The hosted Lovable console operates in synthetic Demo Mode by default until pointed to an active, deployed BankFlow API instance.
+
+### 3.9 Analytics Dashboard Frontend (`frontend/`)
+
+The repository includes a dedicated, locally runnable analytics application built with React 19, Vite, TypeScript, Tailwind CSS, Recharts, and Lucide React:
+
+- **Browser-Only Execution**: The single-page application runs entirely in modern browsers without requiring any cloud services or remote dependencies.
+- **Two Distinct Operating Modes**:
+  - *Connected Mode (Default)*: Directly fetches conformed analytical views from the local BankFlow FastAPI reporting service. Network, database, or timeout failures display an honest error and retry action; live metrics are never silently replaced with mock data.
+  - *Demo Mode*: Deterministic synthetic fixtures can be enabled via `VITE_DEMO_MODE=true` or an interactive UI toggle. A persistent, high-contrast `DEMO DATA` banner ensures users cannot mistake synthetic preview fixtures for live database records.
+- **Strict Currency Isolation**: Monetary metrics are never summed across different ISO currencies without explicit currency grouping. Event gross volumes are clearly distinguished from account balances.
+- **Comprehensive Quality and Pipeline Visibility**: Surfaces both row-level rejections (quarantined records with raw payloads) and batch-level lifecycle/reconciliation outcomes.
 
 ## 4. Implemented Data Schemas
 
@@ -171,14 +182,26 @@ src/bankflow/
 ├── __main__.py              # CLI entry point
 ├── config.py                # settings/env parsing
 ├── db.py                    # connection/session helpers
+├── api/                     # FastAPI read-only reporting service & schemas
 ├── generator/               # synthetic entity/event generation
 ├── extraction/              # CSV parsing and file-level contract checks
 ├── validation/              # row/domain/reference rules
 ├── transformation/          # normalization and mapping
 ├── loading/                 # staging/warehouse writes
 ├── monitoring/              # batch status, quality, reconciliation
-├── analytics/                # callable report queries if useful
-└── etl.py                    # orchestration only
+├── analytics/                # callable report queries and SQL execution
+└── etl.py                    # pipeline orchestration
+
+frontend/
+├── src/
+│   ├── components/          # Overview, Analytics, Quality, Pipeline, Transactions, Layout
+│   ├── context/             # DashboardContext (tab, currency, health, demo mode)
+│   ├── data/                # Deterministic synthetic banking fixtures
+│   ├── services/            # Typed API client, error handling, contract types
+│   └── test/                # Vitest & Testing Library tests
+├── vite.config.ts
+├── tailwind.config.js
+└── package.json
 ```
 
 This is a target, not a requirement to create empty modules immediately. Introduce each module when the current phase needs it. Avoid circular imports and keep database I/O out of pure validation functions where practical.
