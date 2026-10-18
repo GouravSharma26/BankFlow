@@ -19,10 +19,6 @@ services:
         value: "5432"
       - key: BANKFLOW_DB_NAME
         sync: false
-      - key: BANKFLOW_DB_USER
-        sync: false
-      - key: BANKFLOW_DB_PASSWORD
-        sync: false
       - key: BANKFLOW_DB_SSLMODE
         value: require
       - key: BANKFLOW_REPORTING_DB_USER

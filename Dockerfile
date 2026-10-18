@@ -42,12 +42,11 @@ USER bankflow
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    BANKFLOW_API_HOST=0.0.0.0 \
-    BANKFLOW_API_PORT=8000
+    BANKFLOW_API_HOST=0.0.0.0
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${BANKFLOW_API_PORT:-8000}/api/v1/health || exit 1
+    CMD curl -f "http://127.0.0.1:${PORT:-${BANKFLOW_API_PORT:-8000}}/api/v1/health" || exit 1
 
 ENTRYPOINT ["bankflow", "serve", "--host", "0.0.0.0"]

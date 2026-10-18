@@ -16,6 +16,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -23,19 +24,97 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from bankflow.config import DatabaseConfig, get_settings
 from bankflow.db import get_connection
 from bankflow.generator import DefectConfig, SyntheticDataGenerator
-from bankflow.reconciliation.reconciler import ReconciliationEngine
-from bankflow.reporting.schema import init_reporting_schema
+from bankflow.analytics.schema import init_reporting_schema
 from bankflow.staging.loader import StagingLoader
 from bankflow.staging.schema import init_staging_schema
 from bankflow.validation.schema import init_validation_schema
 from bankflow.validation.validator import ValidationEngine
 from bankflow.warehouse.loader import WarehouseLoader
+from bankflow.warehouse.reconciliation import ReconciliationEngine
 from bankflow.warehouse.schema import init_warehouse_schema
+
+
+class BootstrapPreflightError(ValueError):
+    """Raised when remote database bootstrap preflight validation fails."""
+
+
+def validate_bootstrap_target(
+    admin_cfg: DatabaseConfig,
+    confirm_target: Optional[str] = None,
+    allow_local: bool = False,
+    require_ssl: bool = True,
+) -> None:
+    """
+    Validates that the target database configuration is safe for remote bootstrap.
+
+    Rules:
+    1. Rejects local targets (localhost, 127.0.0.1, ::1, 0.0.0.0) unless allow_local=True.
+    2. Rejects remote targets lacking TLS/SSL configuration unless require_ssl=False.
+    3. Requires explicit confirmation of the target host (via confirm_target matching admin_cfg.host).
+    4. Refuses targets with empty host or database name.
+    """
+    host_lower = (admin_cfg.host or "").strip().lower()
+    is_local = host_lower in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "")
+
+    # 1. Reject accidental local targets
+    if is_local and not allow_local:
+        raise BootstrapPreflightError(
+            f"Accidental local target rejected: Host '{admin_cfg.host}' is a local target. "
+            "The remote bootstrap script is intended for remote databases (e.g. Neon, Render). "
+            "Pass --allow-local if you intentionally wish to bootstrap a local database."
+        )
+
+    # 2. Require TLS for remote targets
+    if not is_local and require_ssl:
+        ssl_mode = (admin_cfg.sslmode or "").strip().lower()
+        if ssl_mode not in ("require", "verify-ca", "verify-full"):
+            raise BootstrapPreflightError(
+                f"Insecure remote target rejected: Host '{admin_cfg.host}' lacks required TLS/SSL configuration. "
+                f"Current sslmode is '{admin_cfg.sslmode or 'none'}'. Hosted PostgreSQL deployments require TLS. "
+                "Set BANKFLOW_DB_SSLMODE=require or append ?sslmode=require to DATABASE_URL (or pass --no-ssl to override)."
+            )
+
+    # 3. Target confirmation requirement
+    if not confirm_target or not confirm_target.strip():
+        raise BootstrapPreflightError(
+            f"Explicit target confirmation required: To confirm bootstrapping '{admin_cfg.host}' ('{admin_cfg.name}'), "
+            f"you must pass --confirm-target {admin_cfg.host}."
+        )
+
+    expected_host = (admin_cfg.host or "").strip().lower()
+    expected_db = (admin_cfg.name or "").strip().lower()
+    provided_target = confirm_target.strip().lower()
+    valid_targets = {
+        expected_host,
+        f"{expected_host}/{expected_db}",
+        f"{expected_host}:{admin_cfg.port}",
+        f"{expected_host}:{admin_cfg.port}/{expected_db}",
+    }
+    if provided_target not in valid_targets:
+        raise BootstrapPreflightError(
+            f"Target confirmation mismatch: Provided '--confirm-target {confirm_target}' does not match "
+            f"resolved target host '{admin_cfg.host}' (database: '{admin_cfg.name}')."
+        )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Bootstrap remote database schemas, reporting role, and synthetic demo data."
+    )
+    parser.add_argument(
+        "--confirm-target",
+        dest="confirm_target",
+        help="Explicitly confirm the resolved database hostname before connecting (e.g. --confirm-target ep-cool-fog.neon.tech).",
+    )
+    parser.add_argument(
+        "--allow-local",
+        action="store_true",
+        help="Allow bootstrap to run against local database targets (e.g. localhost, 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--no-ssl",
+        action="store_true",
+        help="Disable mandatory TLS/SSL requirement for remote databases (not recommended for production).",
     )
     parser.add_argument(
         "--reporting-password",
@@ -62,9 +141,25 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def bootstrap_database(reporting_password: str | None = None, seed: int = 42, transactions: int = 500, skip_data_load: bool = False) -> None:
+def bootstrap_database(
+    reporting_password: str | None = None,
+    seed: int = 42,
+    transactions: int = 500,
+    skip_data_load: bool = False,
+    confirm_target: Optional[str] = None,
+    allow_local: bool = False,
+    no_ssl: bool = False,
+) -> None:
     settings = get_settings()
     admin_cfg = settings.db
+
+    # PREFLIGHT: Validate target safety and confirmation BEFORE connecting or executing any DDL
+    validate_bootstrap_target(
+        admin_cfg=admin_cfg,
+        confirm_target=confirm_target,
+        allow_local=allow_local,
+        require_ssl=not no_ssl,
+    )
 
     print("=" * 70)
     print("BankFlow — Remote Database Bootstrap & Demo Data Seeder")
@@ -72,7 +167,7 @@ def bootstrap_database(reporting_password: str | None = None, seed: int = 42, tr
     print(f"Target Database Host:     {admin_cfg.host}:{admin_cfg.port}")
     print(f"Target Database Name:     {admin_cfg.name}")
     print(f"Admin / Bootstrap User:   {admin_cfg.user}")
-    print(f"SSL Mode:                 {admin_cfg.sslmode or 'default'}")
+    print(f"SSL Mode:                 {admin_cfg.sslmode or 'none'}")
     print("=" * 70)
 
     # 1. Connectivity test
@@ -119,9 +214,10 @@ def bootstrap_database(reporting_password: str | None = None, seed: int = 42, tr
                     cur.execute(f.read())
 
                 if reporting_password and reporting_password.strip():
+                    # Preserve password byte-for-byte; do not call .strip() on actual password
                     cur.execute(
                         "ALTER ROLE bankflow_reporting_user WITH PASSWORD %s;",
-                        (reporting_password.strip(),),
+                        (reporting_password,),
                     )
                     print("  [OK] Set password for 'bankflow_reporting_user'.")
                 else:
@@ -191,7 +287,7 @@ def bootstrap_database(reporting_password: str | None = None, seed: int = 42, tr
             port=admin_cfg.port,
             name=admin_cfg.name,
             user="bankflow_reporting_user",
-            password=reporting_password.strip(),
+            password=reporting_password,
             sslmode=admin_cfg.sslmode,
         )
         try:
@@ -229,4 +325,7 @@ if __name__ == "__main__":
         seed=args.seed,
         transactions=args.transactions,
         skip_data_load=args.skip_data_load,
+        confirm_target=args.confirm_target,
+        allow_local=args.allow_local,
+        no_ssl=args.no_ssl,
     )

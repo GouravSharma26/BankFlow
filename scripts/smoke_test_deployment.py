@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import sys
 import urllib.error
 import urllib.request
@@ -37,14 +38,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=30,
-        help="HTTP request timeout in seconds (useful for cold starts). Default: 30s.",
+        default=90,
+        help="HTTP request timeout in seconds (covers Render cold-start spin-up of 30-50s). Default: 90s.",
     )
     return parser.parse_args()
 
 
 class SmokeTestRunner:
-    def __init__(self, api_url: str, frontend_url: Optional[str] = None, timeout: int = 30):
+    def __init__(self, api_url: str, frontend_url: Optional[str] = None, timeout: int = 90):
         self.api_url = api_url.rstrip("/")
         self.frontend_url = frontend_url.rstrip("/") if frontend_url else None
         self.timeout = timeout
@@ -79,6 +80,17 @@ class SmokeTestRunner:
             except Exception:
                 body = body_bytes.decode("utf-8", errors="replace")
             return err.code, dict(err.headers), body
+        except (TimeoutError, socket.timeout) as exc:
+            raise RuntimeError(
+                f"Request timed out after {self.timeout}s to {url} (possible cold-start spin-up in progress)."
+            ) from exc
+        except urllib.error.URLError as err:
+            reason_str = str(err.reason)
+            if "timed out" in reason_str.lower() or isinstance(err.reason, (TimeoutError, socket.timeout)):
+                raise RuntimeError(
+                    f"Request timed out after {self.timeout}s to {url} (possible cold-start spin-up in progress)."
+                ) from err
+            raise RuntimeError(f"Connection failure to {url}: {err.reason}") from err
         except Exception as exc:
             raise RuntimeError(f"Connection failure to {url}: {exc}") from exc
 

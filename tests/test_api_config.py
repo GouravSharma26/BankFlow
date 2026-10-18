@@ -24,6 +24,8 @@ def clean_reporting_env(monkeypatch):
     monkeypatch.delenv("BANKFLOW_API_HOST", raising=False)
     monkeypatch.delenv("BANKFLOW_API_PORT", raising=False)
     monkeypatch.delenv("BANKFLOW_CORS_ORIGINS", raising=False)
+    monkeypatch.delenv("PORT", raising=False)
+    monkeypatch.delenv("HOST", raising=False)
 
 
 def test_api_config_defaults():
@@ -244,3 +246,12 @@ def test_api_config_preserves_base_db_sslmode_with_reporting_credentials(monkeyp
     assert config.db_config.password == "custom_reporting_pass"
     assert config.db_config.sslmode == "require"
     assert "sslmode=require" in config.db_config.get_dsn()
+
+
+def test_container_port_8080_without_explicit_bankflow_api_port(monkeypatch):
+    """Regression test: container platform assigning PORT=8080 with no BANKFLOW_API_PORT resolves to 8080."""
+    monkeypatch.delenv("BANKFLOW_API_PORT", raising=False)
+    monkeypatch.setenv("PORT", "8080")
+
+    config = ApiConfig.from_env()
+    assert config.port == 8080

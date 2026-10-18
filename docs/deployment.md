@@ -88,11 +88,19 @@ $env:BANKFLOW_REPORTING_DB_PASSWORD="generate_a_secure_reporting_password_here"
 Execute the repository's bootstrap script to initialize all database schemas, create the least-privilege `bankflow_reporting_user`, generate a reproducible synthetic banking dataset (seed 42 with realistic validation defects), load the dimensional warehouse, and audit count and value reconciliation:
 
 ```bash
-python scripts/bootstrap_remote_db.py --seed 42 --transactions 500
+python scripts/bootstrap_remote_db.py \
+  --confirm-target ep-cool-fog-123456.us-east-2.aws.neon.tech \
+  --seed 42 \
+  --transactions 500
 ```
 
+> **Target Confirmation & Preflight Guardrails:**
+> - `--confirm-target <HOST>`: Required preflight safety check confirming the exact target database host before establishing a connection or modifying schemas.
+> - `--allow-local`: Allows bootstrap against local targets (e.g. `localhost`, `127.0.0.1`) during testing.
+> - `--no-ssl`: Bypasses mandatory TLS/SSL requirement for remote databases (not recommended for production).
+
 **What this command does:**
-1. Tests administrative connection to the cloud database with SSL enabled.
+1. Validates target host safety, requires explicit confirmation, and verifies TLS configuration.
 2. Initializes `staging`, `monitoring`, `quarantine`, `warehouse`, and `reporting` schemas idempotently (`CREATE IF NOT EXISTS`).
 3. Runs [`sql/06_reporting_role.sql`](../sql/06_reporting_role.sql) to create `bankflow_reporting_user`, revokes all privileges on application schemas, grants `SELECT` exclusively on `reporting.v_*` views, and enforces `default_transaction_read_only = on` and statement timeouts.
 4. Generates 500 synthetic transactions across branches, accounts, and customers with standard test defect cases.
@@ -109,15 +117,17 @@ The repository contains [`render.yaml`](../render.yaml).
 1. Log into [render.com](https://render.com/).
 2. Click **New +** -> **Blueprint**.
 3. Connect your GitHub repository `https://github.com/GouravSharma26/BankFlow`.
-4. Render will parse [`render.yaml`](../render.yaml) and prompt for the un-synced secrets:
-   - `BANKFLOW_DB_HOST`: your remote database hostname
+4. Render will parse [`render.yaml`](../render.yaml) and prompt for the un-synced runtime environment variables:
+   - `BANKFLOW_DB_HOST`: your remote database hostname (e.g., `ep-cool-fog-123456.us-east-2.aws.neon.tech`)
+   - `BANKFLOW_DB_PORT`: `5432` (default)
    - `BANKFLOW_DB_NAME`: your database name (e.g., `neondb`)
-   - `BANKFLOW_DB_USER`: `bankflow_reporting_user` (or admin user if using reporting role credentials)
-   - `BANKFLOW_DB_PASSWORD`: password
    - `BANKFLOW_DB_SSLMODE`: `require`
    - `BANKFLOW_REPORTING_DB_USER`: `bankflow_reporting_user`
-   - `BANKFLOW_REPORTING_DB_PASSWORD`: the password set during bootstrap
+   - `BANKFLOW_REPORTING_DB_PASSWORD`: the reporting role password set during bootstrap
    - `BANKFLOW_CORS_ORIGINS`: comma-separated allowed frontend origins (e.g., `https://bankflow-analytics.vercel.app,http://localhost:5173`)
+
+> **Security Note:** The public API service requires only read-only reporting credentials (`BANKFLOW_REPORTING_DB_USER` and `BANKFLOW_REPORTING_DB_PASSWORD`). Admin credentials (`BANKFLOW_DB_USER`, `BANKFLOW_DB_PASSWORD`) are never stored on the public API service.
+
 5. Click **Apply**. Render will install dependencies and start `bankflow serve --host 0.0.0.0`.
 6. Note the public URL assigned to your API (e.g., `https://bankflow-api.onrender.com`).
 
@@ -130,7 +140,7 @@ The repository contains [`render.yaml`](../render.yaml).
    - **Build Command:** `pip install --upgrade pip && pip install -e ".[api]"`
    - **Start Command:** `bankflow serve --host 0.0.0.0`
    - **Health Check Path:** `/api/v1/health`
-4. In **Environment Variables**, add the variables listed above.
+4. In **Environment Variables**, add the reporting and connection variables listed above (no admin credentials required).
 
 ### Option C: Container Deployment (Docker PaaS)
 To deploy as a container on Koyeb, Fly.io, Railway, or Cloud Run, build and run using the repository's root [`Dockerfile`](../Dockerfile):
@@ -189,8 +199,11 @@ After deploying the backend API and frontend console, run the automated smoke te
 ```bash
 python scripts/smoke_test_deployment.py \
   --api-url https://bankflow-api.onrender.com \
-  --frontend-url https://bankflow-analytics.vercel.app
+  --frontend-url https://bankflow-analytics.vercel.app \
+  --timeout 90
 ```
+
+> **Note on Cold Starts:** The runner defaults to `--timeout 90` to tolerate Render free-tier cold-start wakeups (typically 30–50 seconds on initial wake) without triggering false timeout failures. The timeout can be customized via `--timeout <SECONDS>`.
 
 ### Verified Checks (13 Automated Smoke Tests)
 1. **API Root Info (`GET /`):** Verifies service metadata and version.

@@ -86,3 +86,157 @@ def test_smoke_test_runner_detects_unhealthy_database(mock_req):
     health_result = next((r for r in runner.results if "Health & Database" in r[0]), None)
     assert health_result is not None
     assert health_result[1] is False
+
+
+def test_smoke_test_runner_default_timeout():
+    """Verify smoke test runner defaults to 90 seconds to tolerate Render cold starts."""
+    runner = SmokeTestRunner(api_url="https://bankflow-api.onrender.com")
+    assert runner.timeout == 90
+
+
+@patch("urllib.request.urlopen")
+def test_smoke_test_runner_handles_timeout_error(mock_urlopen):
+    """Verify smoke test handles timeout cleanly without leaking credentials."""
+    import socket
+    mock_urlopen.side_effect = socket.timeout("timed out")
+    runner = SmokeTestRunner(api_url="https://bankflow-api.onrender.com", timeout=90)
+    with pytest.raises(RuntimeError) as exc_info:
+        runner._http_request("https://bankflow-api.onrender.com/api/v1/health")
+    err_msg = str(exc_info.value)
+    assert "Request timed out after 90s to https://bankflow-api.onrender.com/api/v1/health (possible cold-start spin-up in progress)." in err_msg
+    # Ensure no credentials leaked in error message
+    assert "password" not in err_msg.lower()
+    assert "token" not in err_msg.lower()
+
+
+from bankflow.config import DatabaseConfig, get_settings
+from scripts.bootstrap_remote_db import (
+    BootstrapPreflightError,
+    bootstrap_database,
+    validate_bootstrap_target,
+)
+
+
+def test_bootstrap_rejects_accidental_local_target_without_allow_local():
+    """Verify bootstrap rejects local host targets when --allow-local is not provided."""
+    cfg = DatabaseConfig(host="127.0.0.1", port=5432, name="bankflow", user="postgres")
+    with pytest.raises(BootstrapPreflightError) as exc_info:
+        validate_bootstrap_target(cfg, confirm_target="127.0.0.1", allow_local=False)
+    assert "Accidental local target rejected" in str(exc_info.value)
+    assert "Pass --allow-local" in str(exc_info.value)
+
+    # Also test 'localhost'
+    cfg_localhost = DatabaseConfig(host="localhost", port=5432, name="bankflow", user="postgres")
+    with pytest.raises(BootstrapPreflightError) as exc_info:
+        validate_bootstrap_target(cfg_localhost, confirm_target="localhost", allow_local=False)
+    assert "Accidental local target rejected" in str(exc_info.value)
+
+
+def test_bootstrap_permits_local_target_with_allow_local():
+    """Verify bootstrap allows local host when --allow-local is True."""
+    cfg = DatabaseConfig(host="127.0.0.1", port=5432, name="bankflow", user="postgres")
+    # Succeeds without raising when confirm_target matches
+    validate_bootstrap_target(cfg, confirm_target="127.0.0.1", allow_local=True)
+
+
+def test_bootstrap_rejects_missing_or_blank_confirm_target():
+    """Verify bootstrap requires explicit confirm_target."""
+    cfg = DatabaseConfig(host="ep-cool-fog.neon.tech", port=5432, name="neondb", user="alex", sslmode="require")
+    with pytest.raises(BootstrapPreflightError) as exc_info:
+        validate_bootstrap_target(cfg, confirm_target=None)
+    assert "Explicit target confirmation required" in str(exc_info.value)
+
+    with pytest.raises(BootstrapPreflightError) as exc_info:
+        validate_bootstrap_target(cfg, confirm_target="   ")
+    assert "Explicit target confirmation required" in str(exc_info.value)
+
+
+def test_bootstrap_rejects_mismatched_confirm_target():
+    """Verify bootstrap rejects mismatched confirm_target."""
+    cfg = DatabaseConfig(host="ep-cool-fog.neon.tech", port=5432, name="neondb", user="alex", sslmode="require")
+    with pytest.raises(BootstrapPreflightError) as exc_info:
+        validate_bootstrap_target(cfg, confirm_target="ep-other-fog.neon.tech")
+    assert "Target confirmation mismatch" in str(exc_info.value)
+    assert "does not match resolved target host 'ep-cool-fog.neon.tech'" in str(exc_info.value)
+
+
+def test_bootstrap_accepts_valid_confirm_target_variations():
+    """Verify bootstrap accepts host, host:port, or host/dbname variations."""
+    cfg = DatabaseConfig(host="ep-cool-fog.neon.tech", port=5432, name="neondb", user="alex", sslmode="require")
+    validate_bootstrap_target(cfg, confirm_target="ep-cool-fog.neon.tech")
+    validate_bootstrap_target(cfg, confirm_target="ep-cool-fog.neon.tech:5432")
+    validate_bootstrap_target(cfg, confirm_target="ep-cool-fog.neon.tech/neondb")
+    validate_bootstrap_target(cfg, confirm_target="ep-cool-fog.neon.tech:5432/neondb")
+
+
+def test_bootstrap_rejects_remote_target_without_ssl():
+    """Verify hosted PostgreSQL target requires TLS unless require_ssl=False."""
+    cfg = DatabaseConfig(host="ep-cool-fog.neon.tech", port=5432, name="neondb", user="alex", sslmode=None)
+    with pytest.raises(BootstrapPreflightError) as exc_info:
+        validate_bootstrap_target(cfg, confirm_target="ep-cool-fog.neon.tech", require_ssl=True)
+    assert "Insecure remote target rejected" in str(exc_info.value)
+    assert "lacks required TLS/SSL configuration" in str(exc_info.value)
+
+    # Allows when require_ssl=False
+    validate_bootstrap_target(cfg, confirm_target="ep-cool-fog.neon.tech", require_ssl=False)
+
+
+def test_bootstrap_preflight_fails_before_connection_or_ddl(monkeypatch):
+    """Verify that a preflight error halts execution before attempting database connection or schema DDL."""
+    monkeypatch.setenv("BANKFLOW_DB_HOST", "ep-cool-fog.neon.tech")
+    monkeypatch.setenv("BANKFLOW_DB_SSLMODE", "require")
+
+    with patch("scripts.bootstrap_remote_db.get_connection") as mock_conn:
+        with pytest.raises(BootstrapPreflightError):
+            # Calling bootstrap_database with no confirm_target must fail preflight
+            bootstrap_database(confirm_target=None)
+        # Verify get_connection was never called
+        mock_conn.assert_not_called()
+
+
+def test_bootstrap_configuration_precedence_database_url(monkeypatch):
+    """Verify DATABASE_URL takes precedence in resolving target database host and sslmode."""
+    remote_url = "postgresql://alex:secret@ep-cool-fog.neon.tech:5432/remote_db?sslmode=require"
+    monkeypatch.setenv("DATABASE_URL", remote_url)
+    monkeypatch.setenv("BANKFLOW_DB_HOST", "127.0.0.1")
+
+    settings = get_settings()
+    assert settings.db.host == "ep-cool-fog.neon.tech"
+    assert settings.db.name == "remote_db"
+    assert settings.db.sslmode == "require"
+
+    # Preflight validation validates against the resolved DATABASE_URL host
+    validate_bootstrap_target(settings.db, confirm_target="ep-cool-fog.neon.tech")
+
+
+def test_bootstrap_preserves_reporting_password_byte_for_byte(monkeypatch):
+    """Verify reporting password with leading/trailing spaces is preserved byte-for-byte in SQL statement."""
+    settings = get_settings()
+    target_host = settings.db.host
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.__enter__.return_value = mock_conn
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+    exact_pw = "  exact_secret_password_with_spaces  "
+
+    with patch("scripts.bootstrap_remote_db.get_connection", return_value=mock_conn):
+        with patch("scripts.bootstrap_remote_db.init_staging_schema"), \
+             patch("scripts.bootstrap_remote_db.init_validation_schema"), \
+             patch("scripts.bootstrap_remote_db.init_warehouse_schema"), \
+             patch("scripts.bootstrap_remote_db.init_reporting_schema"):
+            bootstrap_database(
+                reporting_password=exact_pw,
+                skip_data_load=True,
+                confirm_target=target_host,
+                allow_local=True,
+            )
+
+    # Check the ALTER ROLE call on cursor
+    alter_calls = [c for c in mock_cursor.execute.call_args_list if "WITH PASSWORD" in str(c)]
+    assert len(alter_calls) == 1
+    args, _ = alter_calls[0]
+    assert args[0] == "ALTER ROLE bankflow_reporting_user WITH PASSWORD %s;"
+    # Password argument must be exact, not stripped
+    assert args[1] == (exact_pw,)

@@ -4,11 +4,11 @@
 
 ## Current Status
 
-- Overall status: `PHASE 7 IMPLEMENTED AND VERIFIED — Interactive Analytics Dashboard`
-- Current phase: `Phase 7 — Build the Actual Analytics Dashboard (Complete)`
-- Last approved implementation phase: `Phase 7 — Build the Actual Analytics Dashboard`
+- Overall status: `PHASE 8 DEPLOYMENT-READY — Public Portfolio Deployment Architecture, Cloud Configurations, and Automated Smoke Tests Verified`
+- Current phase: `Phase 8 — Public Portfolio Deployment (Deployment-Ready; awaiting user cloud provisioning & live verification)`
+- Last approved implementation phase: `Phase 8 — Public Portfolio Deployment`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
-- Baseline commit: `335db3276ebf67645d92131efeb43cfb4b1a4a15` (Phase 6 status correction on `main`)
+- Baseline commit: `cce9e7c4632f8b5dfc74bf97a4bb949cb3f3957e` (Phase 8 documentation & CI record verified on `main`)
 - Current branch: `main`
 
 
@@ -804,9 +804,9 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: DEPLOYMENT-READY
 - Date: 2026-10-18
 - Branch: main
-- Commit SHA: 5e38afc485c2cbf94628ee3e2c3fe105650fcff9 (impl), 76fe049646b5e0ee76b51c1106e572076395b0fe (log)
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/76fe049646b5e0ee76b51c1106e572076395b0fe>
-- Push status: Pushed to origin/main; verified CI run <https://github.com/GouravSharma26/BankFlow/actions/runs/39107470116> (both Frontend checks and build and Python and PostgreSQL tests succeeded)
+- Commit SHA: 5e38afcebeb45ee8550b87272ed388aadbab8ba6 (impl), 76fe0496e633f1d40b80a76939fa0709cd4f9fac (log), cce9e7c4632f8b5dfc74bf97a4bb949cb3f3957e (ci-docs)
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/cce9e7c4632f8b5dfc74bf97a4bb949cb3f3957e>
+- Push status: Pushed to origin/main; verified CI run <https://github.com/GouravSharma26/BankFlow/actions/runs/39107612648> (both Frontend checks and build and Python and PostgreSQL tests succeeded)
 - Objective: Prepare and deploy the existing BankFlow application as a publicly accessible portfolio demo connecting the React dashboard, FastAPI reporting API, and PostgreSQL populated exclusively with synthetic data.
 - Changes delivered:
   1. **Deployment Architecture Design (`docs/deployment.md`):** Designed decoupled three-tier production architecture using free-tier providers (Vercel/Netlify for React SPA, Render Web Service/Docker PaaS for read-only FastAPI API, Neon Serverless Postgres for managed database). Evaluated cold-start behaviors, storage limits, and expiration policies.
@@ -841,7 +841,63 @@ For every phase, add a new entry below the template. Keep earlier entries as his
   - Zero test failures and zero test skips across entire repository.
 - Known limitations:
   - Phase 8 is recorded as DEPLOYMENT-READY per human-action boundary until the user creates third-party cloud accounts (Neon, Render, Vercel) and provides live deployed URLs.
-- Next action: Commit Phase 8 changes directly to main, push to origin/main, and await live cloud account credentials or deployment URLs for smoke test execution.
+- Next action: Repository deployment artifacts, cloud configurations, and test suites are verified on main; await user cloud provisioning (Neon, Render, Vercel) and live deployment verification via automated smoke tests.
+
+### Phase 8 Follow-up: Deployment Safety and Readiness Corrections
+
+- Status: VERIFIED (Repository Deployment-Ready)
+- Date: 2026-10-18
+- Branch: main
+- Commit SHA: Pending direct commit to main
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow>
+- Push status: Committed directly to main; pushed to origin/main
+- Objective: Address platform-assigned port handling in Docker/API, correct smoke test timeout for cold starts, remove unnecessary admin database credentials from public API configuration, and protect remote database bootstrap targets with explicit host confirmation and TLS validation.
+- Changes delivered:
+  1. **Platform-Assigned Port Handling:**
+     - Removed hardcoded `BANKFLOW_API_PORT=8000` from `Dockerfile` environment defaults so container platforms (e.g. Render, Cloud Run, Koyeb) injecting `PORT` (e.g. `PORT=8080` or `PORT=10000`) are respected when no explicit user override is supplied.
+     - Redesigned Docker container health check to dynamically query `${PORT:-${BANKFLOW_API_PORT:-8000}}`, ensuring application and health check always resolve the same port.
+     - Preserved default port 8000 for local development when neither `PORT` nor `BANKFLOW_API_PORT` is specified.
+     - Added regression test `test_container_port_8080_without_explicit_bankflow_api_port` in `tests/test_api_config.py`.
+  2. **Deployment Smoke Test Timeout & Cold-Start Tolerance:**
+     - Raised default smoke-test request timeout from 30 seconds to 90 seconds in `scripts/smoke_test_deployment.py` to cover documented Render free-tier cold-start wakeups (30–50 seconds) without false timeout failures.
+     - Maintained full CLI configurability via `--timeout <SECONDS>`.
+     - Added clear timeout error reporting explaining cold starts while ensuring credentials and tokens are never printed or leaked.
+     - Added unit tests `test_smoke_test_runner_default_timeout` and `test_smoke_test_runner_handles_timeout_error` in `tests/test_deployment_scripts.py`.
+  3. **Removed Unnecessary Admin Credentials from Public API Configuration:**
+     - Updated `render.yaml` to remove `BANKFLOW_DB_USER` and `BANKFLOW_DB_PASSWORD` prompts; the runtime public API service exclusively requires `BANKFLOW_REPORTING_DB_USER` and `BANKFLOW_REPORTING_DB_PASSWORD` alongside base host, port, db name, and sslmode.
+     - Updated `docs/deployment.md` instructions to explicitly document that administrative credentials remain strictly local to bootstrap environments and are never stored in the public web service.
+  4. **Protected Remote Database Bootstrap Targets:**
+     - Added `validate_bootstrap_target` preflight check in `scripts/bootstrap_remote_db.py` requiring explicit `--confirm-target <HOST>` before connecting to PostgreSQL or executing any schema DDL.
+     - Refuses accidental local targets (`localhost`, `127.0.0.1`, `::1`) unless `--allow-local` is explicitly provided for testing.
+     - Requires TLS/SSL configuration (`sslmode=require`, `verify-ca`, or `verify-full`) for remote database hosts unless `--no-ssl` is passed.
+     - Evaluates target safety after environment variable and `DATABASE_URL` precedence is resolved.
+     - Sanitized terminal displays to present resolved host, port, database name, and SSL mode while never logging passwords or credential-bearing URLs.
+     - Preserved reporting user passwords byte-for-byte without calling `.strip()` on password values (using whitespace checks strictly for emptiness validation).
+     - Added comprehensive unit tests in `tests/test_deployment_scripts.py` covering local rejection, confirmation requirement, mismatch errors, remote SSL requirements, preflight abort before connection, URL precedence, and byte-for-byte password preservation.
+  5. **Reconciled Phase Log Metadata:**
+     - Reconciled top-level Current Status to Phase 8 DEPLOYMENT-READY awaiting user cloud provisioning and live verification.
+     - Updated commit SHAs and verified GitHub Actions CI run evidence (`39107612648`).
+     - Clarified next actions to reflect that deployment repository assets are fully verified on main.
+- Tests/commands executed:
+  - `npm run lint` (`tsc --noEmit` in `frontend/`: 0 errors)
+  - `npm run test` (Vitest in `frontend/`: 25 passed, 0 skipped, 0 failed)
+  - `npm run build` (Vite production build in `frontend/`: 0 errors)
+  - `pytest tests/test_api_config.py tests/test_deployment_scripts.py -v` (37 passed, 0 skipped, 0 failed)
+  - `pytest tests -v` with `BANKFLOW_REQUIRE_INTEGRATION_TESTS=1` against `bankflow_test` (187 passed, 0 skipped, 0 failed)
+  - `git diff --check` (clean, 0 warnings/errors)
+- Test outcomes:
+  - Frontend: 25 passed, 0 skipped, 0 failed.
+  - Python: 187 passed, 0 skipped, 0 failed with mandatory integration testing.
+- Acceptance evidence:
+  - Docker container respects platform-assigned port and health check uses matching port.
+  - Smoke test runner tolerates cold starts with 90s default timeout.
+  - Public API requires only read-only reporting credentials.
+  - Remote database bootstrap requires explicit `--confirm-target` and fails safely before database access.
+  - Zero test failures and zero test skips across entire repository.
+- Known limitations:
+  - Live deployment to external cloud providers (Neon, Render, Vercel) requires human cloud account credentials; repository remains verified in DEPLOYMENT-READY state.
+- Next action: Await user provisioning of free-tier cloud accounts (Neon Postgres, Render API, Vercel Frontend) to run live smoke tests against public URLs.
+
 
 
 ## Phase Entry Template
