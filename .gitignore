@@ -28,9 +28,9 @@ pytest-junit.xml
 
 # Environment and secrets
 .env
-.env.local
-.env.*.local
+.env.*
 !.env.example
+!.env.*.example
 
 # Local databases and dumps
 *.sqlite3

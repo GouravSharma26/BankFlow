@@ -1,61 +1,96 @@
 # BankFlow — Banking Transaction ETL & Analytics Warehouse
 
-BankFlow is a Python and PostgreSQL portfolio project demonstrating an end-to-end batch ETL workflow on **synthetic banking data**. It ingests CSV files, preserves source lineage, validates data contracts, quarantines rejected records, loads a dimensional warehouse, detects duplicate/conflicting replays, and reconciles batch outcomes.
+BankFlow is an end-to-end data engineering portfolio project that ingests synthetic banking events, validates data contracts, quarantines invalid records, loads a PostgreSQL dimensional warehouse, reconciles pipeline outcomes, and exposes read-only analytics through a FastAPI service and React dashboard.
 
-> **Scope:** BankFlow is an educational data engineering portfolio project using synthetic data only. It does not connect to real banks, process real customer records, or move real money. The implemented system includes batch ETL staging, contract validation, quarantine, a dimensional warehouse, idempotent replay protection, count/monetary reconciliation, SQL analytics, a read-only reporting API, and CI automation.
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Open%20Dashboard-2563eb?logo=vercel&logoColor=white)](https://bank-flow-eight.vercel.app/)
+[![API Health](https://img.shields.io/badge/API-Health%20Check-16a34a?logo=render&logoColor=white)](https://bankflow-reporting-api.onrender.com/api/v1/health)
+[![CI](https://github.com/GouravSharma26/BankFlow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/GouravSharma26/BankFlow/actions/workflows/ci.yml)
 
-> [!TIP]
-> **Reviewers & Interviewers:** See [`docs/demo_walkthrough.md`](docs/demo_walkthrough.md) for a step-by-step reproducible demonstration guide and interview talking points covering architecture, idempotency, data quality, and failure handling.
+> **Synthetic-data demo only.** BankFlow does not connect to real banks, handle real customer information, process real payments, or move money. Monetary values represent gross positive transaction-event amounts, not account balances, net cash flow, profit, or revenue.
 
-## Highlights
+## Live deployment
 
-- **Repeatable batch ingestion:** CSV header checks, raw staging, batch IDs, row-level lineage, and seeded synthetic-data generation.
-- **Data quality:** contract validation, rule-coded quality issues, rejected-record quarantine, and strict date/financial amount checks.
-- **Dimensional warehouse:** PostgreSQL star schema with date, transaction-type, branch, customer, and account dimensions plus a transaction fact table.
-- **Replay safety:** idempotent loads distinguish identical source-event replays from conflicting payloads; unique constraints and conflict-safe inserts support concurrent loading.
-- **Reconciliation:** count/value checks across staged, accepted, rejected, and warehouse records; CLI returns a failure exit code when reconciliation fails.
-- **Operational safety:** environment-based configuration, a dedicated test database, destructive-test guardrails, Docker Compose PostgreSQL, and automated tests.
-- **Analytics SQL:** reusable reports for monthly transaction volumes, transaction-type/channel mix, branch activity, data-quality issues, batch health, and quarantine volume.
+- **Dashboard:** https://bank-flow-eight.vercel.app/
+- **API:** https://bankflow-reporting-api.onrender.com/
+- **API health check:** https://bankflow-reporting-api.onrender.com/api/v1/health
+- **Interactive API docs:** https://bankflow-reporting-api.onrender.com/docs
+
+The deployed architecture uses **Vercel** for the React frontend, **Render** for the read-only API, and **Neon PostgreSQL** for the warehouse. The production deployment smoke-test run reported **13/13 checks passed on October 18, 2026**, including database health, analytics endpoints, CORS, read-only write protection, and frontend delivery.
+
+## What it demonstrates
+
+- **Batch ETL:** Generate and ingest reproducible CSV datasets, preserve raw source payloads, and track batches and row lineage.
+- **Data contracts and quality:** Validate transaction and entity fields with stable rule codes, record issues, and quarantine rejected rows.
+- **Dimensional warehousing:** Load conformed dimensions and transaction facts into a PostgreSQL star schema.
+- **Idempotency and replay safety:** Prevent duplicate loading and distinguish identical replays from conflicting source events.
+- **Reconciliation:** Compare pipeline counts and monetary values across stages, rejections, and warehouse facts.
+- **SQL analytics:** Provide reusable reporting views for daily trends, deposit/withdrawal activity, branch/channel performance, transaction-type mix, data quality, batch health, and quarantine inventory.
+- **Read-only API:** Serve reporting data through FastAPI using a dedicated least-privilege PostgreSQL reporting role.
+- **Interactive dashboard:** Explore portfolio KPIs, transaction trends, quality issues, pipeline batches, and transaction facts with currency-aware filters.
+- **Operational safeguards:** Use environment-based configuration, a dedicated test database, protected bootstrap target confirmation, TLS for hosted PostgreSQL, and automated CI and deployment smoke tests.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[Synthetic CSV source files] --> B[Python ETL CLI]
+    B --> C[Neon PostgreSQL: staging and lineage]
+    C --> D[Validation and data-quality rules]
+    D -->|Rejected rows| E[Quarantine schema]
+    D -->|Valid rows| F[Dimensional warehouse]
+    F --> G[Reconciliation and reporting views]
+    G --> H[Read-only FastAPI on Render]
+    H --> I[React + Vite dashboard on Vercel]
+```
+
+All monetary reports isolate currencies. BankFlow does not perform implicit FX conversion or combine different currencies into one total.
 
 ## Technology stack
 
-| Area | Technology |
+| Layer | Technologies |
 |---|---|
-| Language / CLI | Python 3.12+, Click |
-| API Layer | FastAPI, Uvicorn (optional extra `[api]`) |
-| Database | PostgreSQL 17 |
-| Data access | psycopg2 |
-| Configuration | python-dotenv and environment variables |
-| Local database | Docker Compose |
-| Automated testing | pytest and PostgreSQL integration tests |
-| Analytics | SQL over a dimensional warehouse |
-| Dashboard Frontend | React 19, Vite, TypeScript, Tailwind CSS, Recharts (in `frontend/`) |
+| Data engineering and CLI | Python 3.12+, Click |
+| API | FastAPI, Uvicorn |
+| Database and analytics | PostgreSQL, SQL, dimensional modeling |
+| Data access and configuration | psycopg2, python-dotenv |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, Recharts |
+| Testing | pytest, PostgreSQL integration tests, Vitest, TypeScript checks |
+| Local development | Docker Compose |
+| Hosting | Neon PostgreSQL, Render, Vercel |
 
-## Quickstart — Windows PowerShell
+## Run locally
 
-Prerequisites: Python 3.12, Docker Desktop with Compose, and Git.
+### Prerequisites
 
-### 1. Install the project
+- Python 3.12+
+- Docker Desktop with Docker Compose
+- Node.js and npm (for the dashboard)
+- Git
+
+### 1. Clone and install the Python project
 
 ```powershell
+git clone https://github.com/GouravSharma26/BankFlow.git
+cd BankFlow
+
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev,api]"
 ```
 
-### 2. Configure and start PostgreSQL
+### 2. Start the local PostgreSQL databases
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env } else { Write-Host ".env already exists; leaving it unchanged." }
 docker compose up -d --wait
 python -m bankflow test-connection
 python -m bankflow init-db
 ```
 
-If you already have a working `.env`, do not overwrite it. If host port 5432 is occupied, set `BANKFLOW_DB_PORT=5433` in `.env` before starting Compose. The Compose initialization script creates the separate `bankflow_test` database when a new database volume is initialized.
+If you already have a configured `.env`, do not overwrite it. Docker Compose uses port `5432` by default; if that port is already occupied, set `BANKFLOW_DB_PORT=5433` in `.env`. The test database is initialized when Docker creates a new database volume.
 
-### 3. Run the clean end-to-end pipeline
+### 3. Run a sample ETL batch
 
 ```powershell
 python -m bankflow generate --output-dir data/samples --seed 42 --branches 5 --customers 25 --accounts 40 --transactions 100
@@ -63,9 +98,7 @@ python -m bankflow run --input-dir data/samples --batch-id demo-clean-001
 python -m bankflow batch-status demo-clean-001
 ```
 
-The `run` command executes staging → validation → warehouse loading → reconciliation. A failed pipeline or `UNRECONCILED` result produces a non-zero exit code.
-
-### 4. Try data-quality scenarios (optional)
+To exercise data-quality validation and quarantine, generate a dataset with defects:
 
 ```powershell
 python -m bankflow generate --output-dir data/defective-sample --seed 42 --transactions 100 --with-defects
@@ -73,43 +106,32 @@ python -m bankflow run --input-dir data/defective-sample --batch-id demo-defects
 python -m bankflow batch-status demo-defects-001
 ```
 
-The defect generator exercises validation and quarantine rules. Inspect batch counts and quality issues rather than expecting every generated row to load.
+Run `python -m bankflow --help` for the full CLI.
 
-## CLI reference
+### 4. Start the API
 
-Run `python -m bankflow --help` for the installed command list.
-
-| Command | Purpose |
-|---|---|
-| `generate` | Generate reproducible synthetic CSVs, optionally with defects |
-| `stage` | Ingest a CSV dataset directory into staging |
-| `validate BATCH_ID` | Validate staged records and quarantine rejected rows |
-| `load BATCH_ID` | Load conformed dimensions and accepted transaction facts |
-| `reconcile BATCH_ID` | Audit counts and monetary totals |
-| `run` | Run staging, validation, loading, and reconciliation in one command |
-| `batch-status BATCH_ID` | Inspect batch metrics and data-quality issue counts |
-| `report REPORT_NAME` | Query conformed reporting views (`daily`, `deposit-withdrawal`, `branch-channel`, `type-mix`, `quality`, `batches`, `quarantine`, `transactions`) |
-| `serve` | Start read-only FastAPI reporting server for dashboard console |
-| `init-db` | Initialize staging, monitoring, quarantine, warehouse, and reporting schemas |
-| `test-connection` | Verify database connectivity without logging credentials |
-
-Use `--test-db` on commands that support it to target the dedicated test database instead of the primary local database.
-
-## Tests
-
-Start PostgreSQL first and ensure `bankflow_test` exists. Then run:
+From the repository root, with the virtual environment activated:
 
 ```powershell
-python -m pytest tests -v
+python -m bankflow serve --host 127.0.0.1 --port 8000
 ```
 
-The integration tests must use the dedicated test database. Destructive test setup is guarded against non-test database names. CI is configured to require integration tests, so a missing test database should fail the workflow instead of silently skipping integration coverage.
+API docs are available at http://127.0.0.1:8000/docs.
 
-## Analytics SQL & Reporting Views
+### 5. Start the frontend
 
-BankFlow provides a conformed reporting layer in the dedicated `reporting` PostgreSQL schema (`sql/05_reporting_views.sql`) along with canonical executable SQL queries (`sql/04_analytics_queries.sql`).
+In a second terminal:
 
-You can inspect analytical reports using the CLI:
+```powershell
+cd frontend
+if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local } else { Write-Host ".env.local already exists; leaving it unchanged." }
+npm ci
+npm run dev
+```
+
+Open http://localhost:5173. By default, the frontend's `VITE_BANKFLOW_API_BASE_URL` points to the local API at `http://localhost:8000`. Do not commit `.env.local`.
+
+## CLI and reporting examples
 
 ```powershell
 python -m bankflow report daily --limit 10
@@ -122,92 +144,96 @@ python -m bankflow report quarantine
 python -m bankflow report transactions --limit 5
 ```
 
-To run the raw SQL reporting queries from the repository root with a local `psql` client:
+Common CLI commands:
+
+| Command | Purpose |
+|---|---|
+| `generate` | Create reproducible synthetic CSV files, optionally with defects |
+| `stage` | Ingest a dataset directory |
+| `validate BATCH_ID` | Run data-contract checks and quarantine rejected records |
+| `load BATCH_ID` | Load accepted records into the dimensional warehouse |
+| `reconcile BATCH_ID` | Check counts and monetary totals |
+| `run` | Run staging, validation, loading, and reconciliation |
+| `batch-status BATCH_ID` | Inspect a batch's current status and metrics |
+| `report REPORT_NAME` | Query canonical analytics reports |
+| `serve` | Start the read-only FastAPI reporting server |
+
+## Tests and deployment verification
+
+### Python and PostgreSQL
+
+Start the local PostgreSQL service and ensure the dedicated `bankflow_test` database exists before running the full suite:
 
 ```powershell
-psql "postgresql://postgres:postgres@localhost:5432/bankflow" -v ON_ERROR_STOP=1 -f sql/04_analytics_queries.sql
+python -m pytest tests -v
 ```
 
-**Reporting Rules & Guardrails:**
-- All reports group strictly by currency. Do not add different currencies together without an explicit FX-conversion policy.
-- All transaction values represent gross positive event amounts; do not interpret gross event sums as net cash flow or account balances.
-- Completed metrics filter strictly on `COMPLETED` transaction status. Reversals are tracked as discrete transaction events rather than destructive modifications.
+Destructive test setup is guarded so it cannot run against a database whose name is not recognized as a test database. CI is configured to require integration tests.
 
-## Dashboard Console & Analytics UI
-
-BankFlow includes a dedicated, source-controlled frontend application in `frontend/` built with React 19, Vite, TypeScript, Tailwind CSS, Recharts, and Lucide React. It provides an interactive operational and analytical console called **BankFlow Analytics**.
-
-### 1. Start the Reporting API Backend
+### Frontend
 
 ```powershell
-# In repository root with virtual environment activated:
-python -m bankflow serve --host 127.0.0.1 --port 8000
-```
-
-Interactive OpenAPI documentation is available at `http://127.0.0.1:8000/docs`.
-
-### 2. Start the Frontend Dashboard
-
-```powershell
-# In a second terminal:
 cd frontend
-npm install
-npm run dev
+npm ci
+npm run lint
+npm run test
+npm run build
 ```
 
-Open `http://localhost:5173` in your browser.
+### Live deployment smoke test
 
-### 3. Operating Modes
+From the repository root, test the deployed frontend and API:
 
-- **Connected Mode (Default):** Fetches real-time aggregations from the local FastAPI backend and PostgreSQL warehouse. If the backend is unavailable or uninitialized, displays an honest connection error with retry actions (no silent mock fallback).
-- **Demo Mode:** When `VITE_DEMO_MODE=true` is set in `frontend/.env` or toggled via the UI, renders deterministic synthetic preview fixtures and displays an unambiguous, persistent `DEMO DATA` banner so synthetic fixtures cannot be confused with live database state.
-- **Historical Note:** The repository previously referenced an external hosted Lovable prototype. The in-repo `frontend/` application is now the primary, fully testable, source-controlled console.
+```powershell
+python scripts/smoke_test_deployment.py --api-url "https://bankflow-reporting-api.onrender.com" --frontend-url "https://bank-flow-eight.vercel.app" --timeout 90
+```
 
-## Architecture
+The smoke test checks API metadata and health, reporting endpoints, CORS preflight, rejection of write requests, and frontend delivery. The latest reported production run passed all 13 checks.
+
+## Deployment configuration
+
+The repository includes `render.yaml`, `Dockerfile`, `Procfile`, `frontend/vercel.json`, and `netlify.toml`.
+
+- **Database (Neon):** Hosted PostgreSQL; use TLS with `BANKFLOW_DB_SSLMODE=require`.
+- **Backend (Render):** Uses the root `render.yaml` Blueprint. Configure `BANKFLOW_DB_HOST`, `BANKFLOW_DB_PORT`, `BANKFLOW_DB_NAME`, `BANKFLOW_DB_SSLMODE`, `BANKFLOW_REPORTING_DB_USER`, `BANKFLOW_REPORTING_DB_PASSWORD`, and `BANKFLOW_CORS_ORIGINS`.
+- **Frontend (Vercel):** Set the project root to `frontend` and configure `VITE_BANKFLOW_API_BASE_URL=https://bankflow-reporting-api.onrender.com` and `VITE_DEMO_MODE=false`.
+
+Use the [deployment guide](docs/deployment.md) for the complete provisioning sequence and environment-variable details. The remote bootstrap script requires explicit target confirmation and should only be run after verifying the intended host and database. **Never put administrator credentials or real secrets in the public API service or commit them to Git.**
+
+## Repository structure
 
 ```text
-Synthetic CSV files
-       |
-       v
-Staging + batch and row lineage
-       |
-       v
-Validation engine ------> Data-quality issues + quarantine
-       |
-       v
-Conformed dimensions + transaction facts (PostgreSQL star schema)
-       |
-       v
-Reporting Views (PostgreSQL `reporting` schema)
-       |
-       +---> Python CLI (`bankflow report`)
-       |
-       +---> Read-Only FastAPI (`bankflow serve`)
-                   |
-                   v
-             BankFlow Analytics Console (`frontend/` React + Vite)
-             [Optional external prototype: Lovable App]
+BankFlow/
+├── frontend/          # React + Vite analytics dashboard
+├── src/bankflow/      # Python CLI, ETL, validation, warehouse, API
+├── sql/               # Schema definitions, reporting views, role grants
+├── tests/             # Unit, integration, API, analytics, deployment tests
+├── scripts/           # Remote bootstrap and live deployment smoke tests
+├── docker/            # Local PostgreSQL initialization
+├── docs/              # Architecture, contracts, metric definitions, runbooks
+├── render.yaml        # Render Blueprint
+├── Dockerfile         # Container deployment
+├── docker-compose.yml # Local PostgreSQL and test database
+└── pyproject.toml     # Python package and CLI configuration
 ```
 
-Further details: [public deployment guide](docs/deployment.md) · [portfolio demo walk-through](docs/demo_walkthrough.md) · [architecture](docs/architecture.md) · [dashboard API contract](docs/dashboard_api_contract.md) · [data contract](docs/data_contract.md) · [data dictionary](docs/data_dictionary.md) · [quality rules](docs/data_quality_rules.md) · [metric definitions](docs/metric_definitions.md) · [testing strategy](docs/testing_strategy.md) · [developer setup](HUMAN_SETUP.md) · [development checklist](DEVELOPMENT_CHECKLIST.md).
+## Documentation
 
-## Public portfolio deployment
+- [Deployment guide](docs/deployment.md)
+- [Demo walkthrough and interview talking points](docs/demo_walkthrough.md)
+- [Architecture](docs/architecture.md)
+- [Dashboard API contract](docs/dashboard_api_contract.md)
+- [Data contract](docs/data_contract.md)
+- [Data dictionary](docs/data_dictionary.md)
+- [Data-quality rules](docs/data_quality_rules.md)
+- [Metric definitions](docs/metric_definitions.md)
+- [Design decisions](docs/design_decisions.md)
+- [Testing strategy](docs/testing_strategy.md)
 
-BankFlow is fully prepared for public portfolio deployment using zero-cost cloud tiers:
+## Safety and analytical limitations
 
-1. **Managed Database (Neon Serverless Postgres):** Provides PostgreSQL with SSL (`sslmode=require`). Initialize schemas, create the least-privilege `bankflow_reporting_user`, and load synthetic demo data using:
-   ```bash
-   python scripts/bootstrap_remote_db.py --seed 42 --transactions 500
-   ```
-2. **Read-Only Reporting API (Render / Docker):** Deploy the backend using the 1-click Render Blueprint ([`render.yaml`](render.yaml)), the containerized [`Dockerfile`](Dockerfile), or [`Procfile`](Procfile) with `bankflow serve --host 0.0.0.0`.
-3. **Analytics Dashboard (Vercel / Netlify):** Deploy [`frontend/`](frontend/) with `VITE_BANKFLOW_API_BASE_URL` pointing to the public API. Routing is managed by [`frontend/vercel.json`](frontend/vercel.json) or [`netlify.toml`](netlify.toml).
-4. **Automated Smoke Testing:** Validate the live deployment end-to-end without printing secrets:
-   ```bash
-   python scripts/smoke_test_deployment.py --api-url https://your-api.onrender.com --frontend-url https://your-dashboard.vercel.app
-   ```
-
-Complete step-by-step instructions, environment variable matrix, cold-start handling, and troubleshooting: [`docs/deployment.md`](docs/deployment.md).
-
-## Limitations and safety
-
-Use synthetic datasets only. Never commit `.env`, credentials, or real banking/customer data. Real banking integrations, live card transactions, and payment execution are out of scope.
+- Use synthetic data only. No live banking integrations, payment execution, or real customer data are supported.
+- Every monetary metric must be filtered or grouped by currency; there is no implicit FX conversion.
+- Amounts are positive gross event values. They are not net cash flow, balances, bank revenue, or profit.
+- The hosted API uses a dedicated read-only reporting role; pipeline writes belong to the controlled ETL/bootstrap process.
+- Keep `.env`, `.env.local`, credentials, private connection strings, database dumps, and generated local datasets out of version control.
