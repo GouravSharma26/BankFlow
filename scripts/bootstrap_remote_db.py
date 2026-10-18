@@ -270,7 +270,8 @@ def bootstrap_database(
 
                 reconciler = ReconciliationEngine(conn)
                 recon_report = reconciler.reconcile_batch(batch_id)
-                print(f"  - Reconciliation:   {recon_report.status.value}")
+                recon_status_str = "RECONCILED" if recon_report.is_reconciled else "UNRECONCILED"
+                print(f"  - Reconciliation:   {recon_status_str}")
                 if not recon_report.is_reconciled:
                     print(f"  [WARN] Discrepancies detected: {recon_report.discrepancies}")
                 else:
@@ -293,7 +294,12 @@ def bootstrap_database(
         try:
             with get_connection(reporting_cfg) as rep_conn:
                 with rep_conn.cursor() as rep_cur:
-                    rep_cur.execute("SELECT currency, gross_transaction_amount, total_transaction_count FROM reporting.v_overview_metrics;")
+                    rep_cur.execute("""
+                        SELECT currency, SUM(gross_transaction_amount) AS gross_val, SUM(total_transaction_count) AS total_vol
+                        FROM reporting.v_daily_transaction_summary
+                        GROUP BY currency
+                        ORDER BY currency;
+                    """)
                     rows = rep_cur.fetchall()
                     print(f"  [OK] Read-only reporting verification query succeeded! Returned {len(rows)} currency rows:")
                     for r in rows:
