@@ -61,3 +61,7 @@ BankFlow_Resume_Release_Patch/
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# Local-only documentation and workspace scratch folders
+dog_ign/
+doc_ign/
