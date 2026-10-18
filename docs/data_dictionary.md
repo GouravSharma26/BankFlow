@@ -1,6 +1,6 @@
 # BankFlow — Data Dictionary
 
-> Status: planned. This dictionary must be filled with the actual PostgreSQL schema during implementation. Never leave the documented types, nullability, constraints, or descriptions out of sync with the SQL schema.
+> Status: Verified and complete through Phase 6. This dictionary reflects the implemented PostgreSQL schema (staging, monitoring, quarantine, warehouse, and reporting views). All documented types, nullability, constraints, and descriptions match the active database schema.
 
 ## 1. Naming and Documentation Rules
 

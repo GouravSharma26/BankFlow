@@ -71,6 +71,9 @@ def test_is_test_database_guard():
     assert DatabaseConfig(name="test_backup").is_test_database() is False
     assert DatabaseConfig(name="master_test").is_test_database() is False
     assert DatabaseConfig(name="main_test_db").is_test_database() is False
+    assert DatabaseConfig(name="staging_test").is_test_database() is False
+    assert DatabaseConfig(name="stage_test").is_test_database() is False
+    assert DatabaseConfig(name="release_test").is_test_database() is False
 
     # Standard production / non-test databases
     assert DatabaseConfig(name="bankflow").is_test_database() is False
