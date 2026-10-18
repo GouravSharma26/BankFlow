@@ -8,7 +8,7 @@
 - Current phase: `Phase 8 — Public Portfolio Deployment (Deployment-Ready; awaiting user cloud provisioning & live verification)`
 - Last approved implementation phase: `Phase 8 — Public Portfolio Deployment`
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
-- Baseline commit: `cce9e7c4632f8b5dfc74bf97a4bb949cb3f3957e` (Phase 8 documentation & CI record verified on `main`)
+- Baseline commit: `648cd3390fe2f5e3f4369da98baebbe3c8a91a9d` (Phase 8 Follow-up verified on `main`)
 - Current branch: `main`
 
 
@@ -848,9 +848,9 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED (Repository Deployment-Ready)
 - Date: 2026-10-18
 - Branch: main
-- Commit SHA: 4cab68be8e6b0b7cbfd73d40d2bf1f4f32474967
-- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/4cab68be8e6b0b7cbfd73d40d2bf1f4f32474967>
-- Push status: Committed directly to main; pushed to origin/main
+- Commit SHA: 4cab68be8e6b0b7cbfd73d40d2bf1f4f32474967 (impl), 648cd3390fe2f5e3f4369da98baebbe3c8a91a9d (log)
+- GitHub URL: <https://github.com/GouravSharma26/BankFlow/commit/648cd3390fe2f5e3f4369da98baebbe3c8a91a9d>
+- Push status: Pushed to origin/main; verified CI run <https://github.com/GouravSharma26/BankFlow/actions/runs/39121137999> (both Frontend checks and build and Python and PostgreSQL tests succeeded)
 - Objective: Address platform-assigned port handling in Docker/API, correct smoke test timeout for cold starts, remove unnecessary admin database credentials from public API configuration, and protect remote database bootstrap targets with explicit host confirmation and TLS validation.
 - Changes delivered:
   1. **Platform-Assigned Port Handling:**
