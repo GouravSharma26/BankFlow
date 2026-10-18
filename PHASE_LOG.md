@@ -4,12 +4,13 @@
 
 ## Current Status
 
-- Overall status: `PHASE 5.2 HOTFIX VERIFIED — Credential Configuration Hotfix Implemented`
-- Current phase: `Phase 5.2 Hotfix — Pre-Phase-6 Credential Configuration Hotfix`
-- Last approved implementation phase: `Phase 5.1 Hotfix — API Review Findings & Hardening (Merged into main at 56fc761)`
+- Overall status: `PHASE 6 VERIFIED ON BRANCH — Awaiting PR #10 Review and Merge`
+- Current phase: `Phase 6 — Hardening, CI, Documentation, and Portfolio Release`
+- Last approved implementation phase: `Phase 5.2 Follow-up — Reporting Password Exact Preservation Hotfix (Merged into main at 374db5f via PR #9)`
+- Verified merge baseline for Phase 6: `374db5f53de83c315b7d200adbaffd377faf4f0a` (PR #9 merge commit on `main`)
 - GitHub repository: <https://github.com/GouravSharma26/BankFlow>
-- Baseline commit: `56fc761` (PR #7 merge commit)
-- Branch: `hotfix/reporting-credential-config`
+- Current branch: `phase/6-hardening-portfolio-release`
+- Pull Request: PR #10 (<https://github.com/GouravSharma26/BankFlow/pull/10>)
 
 
 ## How to Maintain This File
@@ -703,11 +704,16 @@ For every phase, add a new entry below the template. Keep earlier entries as his
 - Status: VERIFIED
 - Date: 2026-10-17
 - Branch: `phase/6-hardening-portfolio-release`
-- Code Commit SHA: `6697c207908fb26db4a6d4111ddae33b490f23dc`
-- Documentation / Head Commit SHA: `2da9ac51c89bbfe71e416a9eb0317e3f8be140c9`
+- Code Commit SHA: `6697c208a8876488c14cc49d0717823ed64e698c`
+- Documentation Commit SHA: `2da9ac5bbfa917153b84487f0c8f0519a7656a85`
+- Prior Head Commit SHA: `f0446a8bb5406c90e953a16af4a12f7edaec4bff`
 - Pull Request: PR #10 (<https://github.com/GouravSharma26/BankFlow/pull/10>)
-- GitHub CI Run (PR #10): <https://github.com/GouravSharma26/BankFlow/actions/runs/39035263412> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.42s)
-- GitHub CI Run (Branch): <https://github.com/GouravSharma26/BankFlow/actions/runs/39035233565> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.38s)
+- Verified GitHub CI Runs (PR #10):
+  - Run #39035382104 (`f0446a8b`): <https://github.com/GouravSharma26/BankFlow/actions/runs/39035382104> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.42s)
+  - Run #39035263412 (`2da9ac5b`): <https://github.com/GouravSharma26/BankFlow/actions/runs/39035263412> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.42s)
+- Verified GitHub CI Runs (Branch):
+  - Run #39035378812 (`f0446a8b`): <https://github.com/GouravSharma26/BankFlow/actions/runs/39035378812> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.38s)
+  - Run #39035233565 (`2da9ac5b`): <https://github.com/GouravSharma26/BankFlow/actions/runs/39035233565> (SUCCESS, 168 passed, 0 skipped, 0 failed in 9.38s)
 - Push status: Pushed to `origin/phase/6-hardening-portfolio-release`; PR #10 open into `main` (auto-merge deferred)
 - Objective: Complete Phase 6 hardening, CI strengthening, repository documentation synchronization, clean-clone verification, and portfolio presentation.
 - Scope delivered:
@@ -725,6 +731,10 @@ For every phase, add a new entry below the template. Keep earlier entries as his
      - Synchronized `README.md`, `HUMAN_SETUP.md`, `RELEASE_CHECKLIST.md`, `docs/architecture.md`, `docs/data_dictionary.md`, and `DEVELOPMENT_CHECKLIST.md`.
      - Updated logical architecture diagram to incorporate Python CLI reporting, read-only FastAPI service, and Lovable Analytics Console boundary (explicitly documenting the hosted prototype's Demo Mode).
      - Removed all stale phase handoffs and marked completed deliverables accurately.
+  5. **PR #10 Review Follow-up & CI Hygiene Hardening:**
+     - Made CI hygiene step effective by configuring `fetch-depth: 0` in `actions/checkout@v4` and evaluating `git diff --check` across the PR base/head commit range (`${BASE_SHA}...${TARGET_SHA}`) or push commit range (`${BEFORE_SHA}...${CURRENT_SHA}`).
+     - Corrected direct SQL demonstration command in `docs/demo_walkthrough.md` to use default PostgreSQL port 5432 with explicit instruction on substituting 5433 if configured.
+     - Reconciled top-level `Current Status` block and verified exact commit SHAs in `PHASE_LOG.md` against git history.
 - Tests/commands executed:
   - `python -m pytest tests/test_config.py -v` (5 passed in 0.05s)
   - Full suite: `$env:BANKFLOW_REQUIRE_INTEGRATION_TESTS = "1"; python -m pytest tests -v` (168 passed, 0 skipped, 0 failed in 712.89s)

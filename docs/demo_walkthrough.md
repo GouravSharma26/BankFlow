@@ -55,7 +55,7 @@ python -m bankflow test-connection --test-db
 python -m bankflow init-db --test-db
 ```
 
-*Note on Ports:* Docker Compose exposes PostgreSQL on loopback `127.0.0.1:5433` (or `5432` depending on `BANKFLOW_DB_PORT`). The initialization script automatically creates both `bankflow` and `bankflow_test`.
+*Note on Ports:* Docker Compose exposes PostgreSQL on loopback `127.0.0.1:5432` by default (or `5433` if `BANKFLOW_DB_PORT=5433` is configured in `.env`). The initialization script automatically creates both `bankflow` and `bankflow_test`.
 
 ---
 
@@ -191,7 +191,8 @@ python -m bankflow report batches --test-db
 
 Reviewers can also run raw SQL queries directly using PostgreSQL client tools:
 ```powershell
-psql -h localhost -p 5433 -U postgres -d bankflow_test -f sql/04_analytics_queries.sql
+# Using default port 5432 (or substitute 5433 if you configured BANKFLOW_DB_PORT=5433 in .env / docker-compose):
+psql -h localhost -p 5432 -U postgres -d bankflow_test -f sql/04_analytics_queries.sql
 ```
 
 ---

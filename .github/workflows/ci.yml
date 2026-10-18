@@ -45,9 +45,44 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Verify repository hygiene and git diff
-        run: git diff --check
+        run: |
+          set -euo pipefail
+          EVENT_NAME="${{ github.event_name }}"
+          echo "Verifying git hygiene for event: ${EVENT_NAME}"
+
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            TARGET_SHA="${{ github.sha }}"
+            echo "Checking git diff between PR base (${BASE_SHA}) and head (${TARGET_SHA})..."
+            git diff --check "${BASE_SHA}...${TARGET_SHA}"
+          elif [ "${EVENT_NAME}" = "push" ]; then
+            BEFORE_SHA="${{ github.event.before }}"
+            CURRENT_SHA="${{ github.sha }}"
+            if [ -n "${BEFORE_SHA}" ] && [ "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ] && git rev-parse --verify "${BEFORE_SHA}" >/dev/null 2>&1; then
+              echo "Checking git diff for push range: ${BEFORE_SHA}...${CURRENT_SHA}..."
+              git diff --check "${BEFORE_SHA}...${CURRENT_SHA}"
+            elif git rev-parse --verify origin/main >/dev/null 2>&1 && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+              echo "New branch push; checking git diff against origin/main..."
+              git diff --check "origin/main...HEAD"
+            elif git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+              echo "Checking git diff for commit: HEAD~1...HEAD..."
+              git diff --check "HEAD~1...HEAD"
+            else
+              echo "Single commit repository; checking working tree..."
+              git diff --check
+            fi
+          else
+            if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+              echo "Workflow triggered by ${EVENT_NAME}; checking git diff for HEAD~1...HEAD..."
+              git diff --check "HEAD~1...HEAD"
+            else
+              git diff --check
+            fi
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
